@@ -17,6 +17,6 @@ cmake:
      - '/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk/_sysbuild/empty.conf'
 version: '0.1.0'
 west:
-  command: '/opt/nordic/ncs/toolchains/185bb0e3b6/bin/west build --build-dir build_bl54l15u_dvk . --pristine --board bl54l15u_dvk/nrf54l15/cpuapp -- -DDTC_OVERLAY_FILE=boards/bl54l15u_dvk_nrf54l15_cpuapp.overlay -DDEBUG_THREAD_INFO=On -DCONFIG_DEBUG_THREAD_INFO=y -Dcs_at_command_DEBUG_THREAD_INFO=On'
+  command: '/opt/nordic/ncs/toolchains/185bb0e3b6/bin/west build --build-dir /Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk /Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command --pristine --board bl54l15u_dvk/nrf54l15/cpuapp -- -DCONFIG_DEBUG_THREAD_INFO=y -DDTC_OVERLAY_FILE=boards/bl54l15u_dvk_nrf54l15_cpuapp.overlay'
   topdir: '/opt/nordic/ncs/v3.2.4'
   version: '1.4.0'

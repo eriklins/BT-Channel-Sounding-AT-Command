@@ -422,6 +422,27 @@ def main():
         print(f"Error opening serial port: {e}", file=sys.stderr)
         sys.exit(1)
 
+    # Enable IQ output on the device
+    print("Enabling IQ output... ", end="", flush=True)
+    ser.write(b"AT+IQ on\r\n")
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        resp = ser.readline()
+        if not resp:
+            continue
+        resp_str = resp.decode("ascii", errors="ignore").strip()
+        if resp_str == "OK":
+            break
+        if resp_str == "ERROR":
+            print("device returned ERROR", file=sys.stderr)
+            ser.close()
+            sys.exit(1)
+    else:
+        print("timeout waiting for OK", file=sys.stderr)
+        ser.close()
+        sys.exit(1)
+    print("OK")
+
     try:
         while True:
             raw = ser.readline()
@@ -453,8 +474,14 @@ def main():
                 csv_logger.log(report, est, avg)
 
     except KeyboardInterrupt:
-        print("\nStopped.")
+        print("\nStopping...")
     finally:
+        # Disable IQ output before closing
+        try:
+            ser.write(b"AT+IQ off\r\n")
+            ser.flush()
+        except serial.SerialException:
+            pass
         ser.close()
         if csv_logger:
             csv_logger.close()

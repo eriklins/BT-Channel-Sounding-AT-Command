@@ -22,6 +22,9 @@ struct iq_report {
 	uint8_t rtt_count;
 };
 
+void iq_output_set_enabled(bool enabled);
+bool iq_output_is_enabled(void);
+
 /**
  * Queue IQ tone data for output over the AT interface.
  * Called from BLE callbacks — returns immediately.

@@ -88,9 +88,19 @@ Session status is reported via unsolicited responses:
 +RANGE:1 ERROR
 ```
 
+### IQ Output Control
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `AT+IQ on` | Enable IQ data output over UART | `AT+IQ on` |
+| `AT+IQ off` | Disable IQ data output over UART | `AT+IQ off` |
+| `AT+IQ ?` | Query current IQ output state | `AT+IQ ?` -> `on` |
+
+IQ output is **off by default**. Enable it before starting a ranging session to receive raw IQ tone data. The setting is not persisted across reboots.
+
 ### IQ Data Output
 
-Once a ranging session is active, raw IQ tone data is streamed as unsolicited responses after each Channel Sounding procedure:
+Once IQ output is enabled and a ranging session is active, raw IQ tone data is streamed as unsolicited responses after each Channel Sounding procedure:
 
 ```
 +IQ:<sid>,ap:<n>,rtt:<half_ns>,rn:<count>,<tq>,il:[...],ql:[...],ir:[...],qr:[...]
@@ -141,6 +151,8 @@ Supported baudrates: 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600.
 
 ```
 ATS role=initiator
+OK
+AT+IQ on
 OK
 AT+SCAN 10
 OK

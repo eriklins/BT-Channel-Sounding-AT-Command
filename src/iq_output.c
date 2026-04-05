@@ -37,6 +37,18 @@ static uint8_t iq_prod_idx;
 static uint8_t iq_cons_idx;
 static K_SEM_DEFINE(iq_queue_sem, 0, IQ_QUEUE_DEPTH);
 
+static bool iq_output_enabled;
+
+void iq_output_set_enabled(bool enabled)
+{
+	iq_output_enabled = enabled;
+}
+
+bool iq_output_is_enabled(void)
+{
+	return iq_output_enabled;
+}
+
 #define IQ_OUTPUT_STACK_SIZE 2048
 static K_THREAD_STACK_DEFINE(iq_output_stack, IQ_OUTPUT_STACK_SIZE);
 static struct k_thread iq_output_thread_data;
@@ -113,6 +125,10 @@ static void iq_output_thread(void *p1, void *p2, void *p3)
 
 void iq_output_report(uint8_t session_id, const struct iq_report *report)
 {
+	if (!iq_output_enabled) {
+		return;
+	}
+
 	for (uint8_t ap = 0; ap < report->n_ap; ap++) {
 		if ((uint8_t)(iq_prod_idx - iq_cons_idx) >= IQ_QUEUE_DEPTH) {
 			LOG_WRN("IQ output queue full, dropping report");

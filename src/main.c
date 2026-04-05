@@ -8,6 +8,7 @@
 #include "at_cmd.h"
 #include "app_settings.h"
 #include "bt_mgr.h"
+#include "iq_output.h"
 #include "session_mgr.h"
 #include "version.h"
 
@@ -345,6 +346,26 @@ static void at_range_handler(const char *args)
 	at_cmd_respond("OK");
 }
 
+static void at_iq_handler(const char *args)
+{
+	while (*args == ' ') {
+		args++;
+	}
+
+	if (strcasecmp(args, "on") == 0) {
+		iq_output_set_enabled(true);
+		at_cmd_respond("OK");
+	} else if (strcasecmp(args, "off") == 0) {
+		iq_output_set_enabled(false);
+		at_cmd_respond("OK");
+	} else if (*args == '?') {
+		at_cmd_respond(iq_output_is_enabled() ? "on" : "off");
+		at_cmd_respond("OK");
+	} else {
+		at_cmd_respond("ERROR");
+	}
+}
+
 static void at_diag_handler(const char *args)
 {
 	session_mgr_diag();
@@ -381,6 +402,7 @@ int main(void)
 	at_cmd_init(uart);
 	at_cmd_register("AT+ADV", at_adv_handler);
 	at_cmd_register("AT+SCAN", at_scan_handler);
+	at_cmd_register("AT+IQ", at_iq_handler);
 	at_cmd_register("AT+DIAG", at_diag_handler);
 	at_cmd_register("AT+RANGEX", at_rangex_handler);
 	at_cmd_register("AT+RANGE", at_range_handler);
