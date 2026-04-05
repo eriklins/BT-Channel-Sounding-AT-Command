@@ -1,0 +1,7 @@
+default: cs_at_command
+build_dir: /Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk
+domains:
+  - name: cs_at_command
+    build_dir: /Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/cs_at_command
+flash_order:
+  - cs_at_command

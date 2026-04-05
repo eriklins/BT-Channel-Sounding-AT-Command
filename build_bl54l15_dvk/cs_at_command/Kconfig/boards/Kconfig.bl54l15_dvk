@@ -1,0 +1,2 @@
+# Load board Kconfig descriptions.
+osource "/opt/nordic/ncs/v3.2.4/zephyr/boards/ezurio/bl54l15_dvk/Kconfig.bl54l15_dvk"

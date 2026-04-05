@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/CMakeFiles/cs_at_command"
+		},
+		{
+			"file" : "/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/CMakeFiles/cs_at_command.rule"
+		},
+		{
+			"file" : "/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/CMakeFiles/cs_at_command-complete.rule"
+		},
+		{
+			"file" : "/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-build.rule"
+		},
+		{
+			"file" : "/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-configure.rule"
+		},
+		{
+			"file" : "/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-download.rule"
+		},
+		{
+			"file" : "/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-install.rule"
+		},
+		{
+			"file" : "/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-mkdir.rule"
+		},
+		{
+			"file" : "/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-patch.rule"
+		},
+		{
+			"file" : "/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"cs_at_command"
+		],
+		"name" : "cs_at_command"
+	}
+}

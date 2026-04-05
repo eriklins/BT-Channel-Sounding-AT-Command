@@ -1,0 +1,28 @@
+/*
+ * Copyright (c) 2025 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+ */
+
+/ {
+	cs_antenna_switch: cs-antenna-config {
+		status = "okay";
+		compatible = "nordic,bt-cs-antenna-switch";
+		ant-gpios = <&gpio1 11 (GPIO_ACTIVE_HIGH)>,
+			    <&gpio1 12 (GPIO_ACTIVE_HIGH)>,
+			    <&gpio1 13 (GPIO_ACTIVE_HIGH)>,
+			    <&gpio1 14 (GPIO_ACTIVE_HIGH)>;
+		multiplexing-mode = <0>;
+	};
+};
+
+/* Restore full RRAM and SRAM space - by default some parts are dedicated to FLPR */
+
+&cpuapp_rram {
+	reg = <0x0 DT_SIZE_K(1524)>;
+};
+
+&cpuapp_sram {
+	reg = <0x20000000 DT_SIZE_K(256)>;
+	ranges = <0x0 0x20000000 0x40000>;
+};

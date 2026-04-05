@@ -1,0 +1,13 @@
+# Target labels
+ cs_at_command
+# Source files and their labels
+/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/CMakeFiles/cs_at_command
+/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/CMakeFiles/cs_at_command.rule
+/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/CMakeFiles/cs_at_command-complete.rule
+/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-build.rule
+/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-configure.rule
+/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-download.rule
+/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-install.rule
+/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-mkdir.rule
+/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-patch.rule
+/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/cs_at_command-prefix/src/cs_at_command-stamp/cs_at_command-update.rule
