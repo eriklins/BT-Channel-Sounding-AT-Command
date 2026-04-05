@@ -192,6 +192,12 @@ The default is 400 ms, which is conservative and works reliably for any number o
 
 The value must be between 10 and 400 ms and should be a multiple of 1.25 ms (the BLE connection interval unit); non-aligned values are rounded down internally. Changes take effect on the next ranging session without requiring a reset; already-active sessions are not affected.
 
+## Distance Estimation Script
+
+The [distance_estimation/](distance_estimation/) directory contains a Python script that connects to the UART output of an initiator device and computes real-time distance estimates from the raw RTT and IQ data. It combines three independent methods (RTT time-of-flight, IFFT phase-based ranging, and phase slope) with configurable weights and moving-average smoothing.
+
+See [distance_estimation/README.md](distance_estimation/README.md) for installation, usage, and algorithm details.
+
 ## Building
 
 ```
