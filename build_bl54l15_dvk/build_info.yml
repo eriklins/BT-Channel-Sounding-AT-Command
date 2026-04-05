@@ -8,15 +8,15 @@ cmake:
     qualifiers: 'nrf54l15/cpuapp'
     revision: ''
   images:
-   - name: 'cs_at_command'
-     source-dir: '/Users/erik/Ezurio/tmp/cs_at_command'
+   - name: 'BT-Channel-Sounding-AT-Command'
+     source-dir: '/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command'
      type: 'MAIN'
   kconfig:
     files:
-     - '/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/empty.conf'
-     - '/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/empty.conf'
+     - '/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/_sysbuild/empty.conf'
+     - '/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/_sysbuild/empty.conf'
     user-files:
-     - '/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/empty.conf'
+     - '/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/_sysbuild/empty.conf'
   sysbuild: 'true'
 version: '0.1.0'
 west:

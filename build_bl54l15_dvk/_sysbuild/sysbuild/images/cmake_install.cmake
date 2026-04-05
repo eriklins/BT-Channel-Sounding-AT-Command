@@ -34,31 +34,31 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/bootloader/cmake_install.cmake")
+  include("/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/_sysbuild/sysbuild/images/bootloader/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/firmware_loader/cmake_install.cmake")
+  include("/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/_sysbuild/sysbuild/images/firmware_loader/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/modules/nrf/cmake_install.cmake")
+  include("/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/modules/nrf/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/modules/mcuboot/cmake_install.cmake")
+  include("/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/modules/mcuboot/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/boards/cmake_install.cmake")
+  include("/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/_sysbuild/sysbuild/images/boards/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
-  include("/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/_sysbuild/sysbuild/images/soc/cmake_install.cmake")
+  include("/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/_sysbuild/sysbuild/images/soc/cmake_install.cmake")
 endif()
 

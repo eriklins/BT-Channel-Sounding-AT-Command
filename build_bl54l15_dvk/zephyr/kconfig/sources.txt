@@ -1,9 +1,9 @@
-/Users/erik/Ezurio/tmp/cs_at_command/Kconfig.sysbuild
-/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/Kconfig/Kconfig.sysbuild.modules
-/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/Kconfig/boards/Kconfig.bl54l15_dvk
-/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/Kconfig/boards/Kconfig.sysbuild
-/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/Kconfig/soc/Kconfig.soc
-/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15_dvk/Kconfig/soc/Kconfig.sysbuild
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/Kconfig.sysbuild
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/Kconfig/Kconfig.sysbuild.modules
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/Kconfig/boards/Kconfig.bl54l15_dvk
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/Kconfig/boards/Kconfig.sysbuild
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/Kconfig/soc/Kconfig.soc
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15_dvk/Kconfig/soc/Kconfig.sysbuild
 /opt/nordic/ncs/v3.2.4/nrf/soc/nordic/Kconfig.soc
 /opt/nordic/ncs/v3.2.4/nrf/soc/nordic/Kconfig.sysbuild
 /opt/nordic/ncs/v3.2.4/nrf/soc/nordic/common/vpr/Kconfig.sysbuild

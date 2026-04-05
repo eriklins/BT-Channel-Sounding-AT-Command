@@ -6,15 +6,15 @@ cmake:
     qualifiers: 'nrf54l15/cpuapp'
     revision: ''
   images:
-   - name: 'cs_at_command'
-     source-dir: '/Users/erik/Ezurio/tmp/cs_at_command'
+   - name: 'BT-Channel-Sounding-AT-Command'
+     source-dir: '/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command'
      type: 'MAIN'
   kconfig:
     files:
-     - '/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15u_dvk_dual-antenna/_sysbuild/empty.conf'
-     - '/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15u_dvk_dual-antenna/_sysbuild/empty.conf'
+     - '/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/empty.conf'
+     - '/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/empty.conf'
     user-files:
-     - '/Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15u_dvk_dual-antenna/_sysbuild/empty.conf'
+     - '/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/empty.conf'
 version: '0.1.0'
 west:
   command: '/opt/nordic/ncs/toolchains/185bb0e3b6/bin/west build --build-dir build_bl54l15u_dvk_dual-antenna . --pristine --board bl54l15u_dvk/nrf54l15/cpuapp -- -DEXTRA_CONF_FILE=boards/bl54l15u_dvk_dual-antenna_cpuapp.conf -DEXTRA_DTC_OVERLAY_FILE=boards/bl54l15u_dvk_dual-antenna_cpuapp.overlay -DDEBUG_THREAD_INFO=On -DCONFIG_DEBUG_THREAD_INFO=y -Dcs_at_command_DEBUG_THREAD_INFO=On'

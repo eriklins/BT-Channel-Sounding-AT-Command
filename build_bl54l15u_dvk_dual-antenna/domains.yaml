@@ -1,7 +1,7 @@
-default: cs_at_command
-build_dir: /Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15u_dvk_dual-antenna
+default: BT-Channel-Sounding-AT-Command
+build_dir: /Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna
 domains:
-  - name: cs_at_command
-    build_dir: /Users/erik/Ezurio/tmp/cs_at_command/build_bl54l15u_dvk_dual-antenna/cs_at_command
+  - name: BT-Channel-Sounding-AT-Command
+    build_dir: /Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/BT-Channel-Sounding-AT-Command
 flash_order:
-  - cs_at_command
+  - BT-Channel-Sounding-AT-Command

@@ -41,7 +41,7 @@ static void ati_handler(const char *args)
 
 static void atz_handler(const char *args)
 {
-	at_cmd_respond("OK");
+	//at_cmd_respond("OK");
 	sys_reboot(SYS_REBOOT_COLD);
 }
 
@@ -154,11 +154,7 @@ static void ats_handler(const char *args)
 		val++;
 
 		if (*val == '?') {
-			char resp[48];
-
-			snprintk(resp, sizeof(resp), "devicename=\"%s\"",
-				 app_settings_get_name());
-			at_cmd_respond(resp);
+			at_cmd_respond(app_settings_get_name());
 			at_cmd_respond("OK");
 			return;
 		}
@@ -202,7 +198,7 @@ static void ats_handler(const char *args)
 		if (*val == '?') {
 			char resp[32];
 
-			snprintk(resp, sizeof(resp), "baudrate=%u",
+			snprintk(resp, sizeof(resp), "%u",
 				 app_settings_get_baudrate());
 			at_cmd_respond(resp);
 			at_cmd_respond("OK");
@@ -247,7 +243,7 @@ static void ats_handler(const char *args)
 		if (*val == '?') {
 			char resp[32];
 
-			snprintk(resp, sizeof(resp), "conn_int=%u",
+			snprintk(resp, sizeof(resp), "%u",
 				 app_settings_get_conn_interval_ms());
 			at_cmd_respond(resp);
 			at_cmd_respond("OK");

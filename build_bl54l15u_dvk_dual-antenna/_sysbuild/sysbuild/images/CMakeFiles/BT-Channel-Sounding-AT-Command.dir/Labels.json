@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/CMakeFiles/BT-Channel-Sounding-AT-Command"
+		},
+		{
+			"file" : "/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/CMakeFiles/BT-Channel-Sounding-AT-Command.rule"
+		},
+		{
+			"file" : "/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/CMakeFiles/BT-Channel-Sounding-AT-Command-complete.rule"
+		},
+		{
+			"file" : "/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-build.rule"
+		},
+		{
+			"file" : "/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-configure.rule"
+		},
+		{
+			"file" : "/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-download.rule"
+		},
+		{
+			"file" : "/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-install.rule"
+		},
+		{
+			"file" : "/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-mkdir.rule"
+		},
+		{
+			"file" : "/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-patch.rule"
+		},
+		{
+			"file" : "/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"BT-Channel-Sounding-AT-Command"
+		],
+		"name" : "BT-Channel-Sounding-AT-Command"
+	}
+}

@@ -1,0 +1,13 @@
+# Target labels
+ BT-Channel-Sounding-AT-Command
+# Source files and their labels
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/CMakeFiles/BT-Channel-Sounding-AT-Command
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/CMakeFiles/BT-Channel-Sounding-AT-Command.rule
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/CMakeFiles/BT-Channel-Sounding-AT-Command-complete.rule
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-build.rule
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-configure.rule
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-download.rule
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-install.rule
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-mkdir.rule
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-patch.rule
+/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk_dual-antenna/_sysbuild/sysbuild/images/BT-Channel-Sounding-AT-Command-prefix/src/BT-Channel-Sounding-AT-Command-stamp/BT-Channel-Sounding-AT-Command-update.rule
