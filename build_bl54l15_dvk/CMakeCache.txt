@@ -32,6 +32,9 @@ BOARD_DIR:PATH=/opt/nordic/ncs/v3.2.4/zephyr/boards/ezurio/bl54l15_dvk
 //Support board extensions
 BOARD_EXTENSIONS:BOOL=ON
 
+//No help, variable specified on the command line.
+BT-Channel-Sounding-AT-Command_DEBUG_THREAD_INFO:UNINITIALIZED=On
+
 //Selected board
 CACHED_BOARD:STRING=bl54l15_dvk/nrf54l15/cpuapp
 
@@ -88,6 +91,9 @@ CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 
 //No help, variable specified on the command line.
 CONFIG_DEBUG_THREAD_INFO:UNINITIALIZED=y
+
+//No help, variable specified on the command line.
+DEBUG_THREAD_INFO:UNINITIALIZED=On
 
 //No help, variable specified on the command line.
 DTC_OVERLAY_FILE:UNINITIALIZED=boards/bl54l15_dvk_nrf54l15_cpuapp.overlay

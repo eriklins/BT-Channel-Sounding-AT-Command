@@ -8,11 +8,8 @@
 	cs_antenna_switch: cs-antenna-config {
 		status = "okay";
 		compatible = "nordic,bt-cs-antenna-switch";
-		ant-gpios = <&gpio1 11 (GPIO_ACTIVE_HIGH)>,
-			    <&gpio1 12 (GPIO_ACTIVE_HIGH)>,
-			    <&gpio1 13 (GPIO_ACTIVE_HIGH)>,
-			    <&gpio1 14 (GPIO_ACTIVE_HIGH)>;
-		multiplexing-mode = <0>;
+		ant-gpios = <&gpio1 9 (GPIO_ACTIVE_HIGH)>;  // the BL54L15µ dual-antenna addon uses just one gpio in multiplexing mode
+		multiplexing-mode = <1>;                    
 	};
 };
 
