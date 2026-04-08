@@ -95,7 +95,7 @@ The plain (non-conjugate) product implements the *sum* of the two PCT phases. Pe
 Supplementary cross-check method. Fits a linear regression to the unwrapped phase of the CTF vs frequency. The slope is proportional to the time-of-flight.
 
 ```
-distance = c * slope / (4 * pi)
+distance = -c * slope / (4 * pi)
 ```
 
 Less robust in multipath environments but provides an independent estimate. The same per-tone validity mask is applied before the linear fit.

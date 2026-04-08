@@ -28,6 +28,11 @@ FREQ_START_HZ = 2_404e6  # 2404 MHz
 FREQ_SPACING_HZ = 1e6  # 1 MHz spacing
 RTT_UNIT_S = 0.5e-9  # each RTT unit = 0.5 ns
 
+# Default weights for combining RTT, IFFT, and Phase Slope distance estimates
+DEFAULT_WEIGHT_RTT = 0.10
+DEFAULT_WEIGHT_IFFT = 0.50
+DEFAULT_WEIGHT_SLOPE = 0.40
+
 # Tone frequencies (Hz)
 TONE_FREQS_HZ = np.array([FREQ_START_HZ + i * FREQ_SPACING_HZ for i in range(NUM_TONES)])
 
@@ -243,11 +248,12 @@ def compute_ifft_distance(
     remote_pct = i_remote + 1j * q_remote
 
     # Channel Transfer Function: H(k) = local(k) * remote(k).
-    # We then conjugate so the IFFT peak appears at a positive delay in the
-    # lower half of the result (the controller's PCT sign convention puts
-    # the un-conjugated peak in the upper half — Nordic's reference compensates
-    # for this with a leading minus in the phase-slope formula).
-    ctf = np.conj(local_pct * remote_pct)
+    # The sum of the two PCT phases (= 2*theta_propagation) cancels the LO
+    # offset. Empirically the controller's PCT sign convention is such that
+    # the resulting CTF phase *decreases* with frequency, so the IFFT peak
+    # lands in the *upper* half of the result (alias of a positive delay).
+    # The peak search below handles both halves.
+    ctf = local_pct * remote_pct
 
     # Mask out tones the device flagged as invalid / unmeasured. Without this,
     # CS channels excluded from the channel map (e.g. the BLE primary
@@ -268,17 +274,22 @@ def compute_ifft_distance(
     cir = np.fft.ifft(ctf_padded)
     cir_mag = np.abs(cir)
 
-    # Search only the first half (unambiguous range)
+    # Find the global peak. Because the CTF phase has the opposite sign on
+    # real hardware, the peak corresponding to a positive distance can lie
+    # in either half of the IFFT output. Treat indices >= n_fft/2 as the
+    # alias of a positive delay (n_fft - idx).
+    peak_idx = int(np.argmax(cir_mag))
+    refined_idx = _parabolic_interpolation(cir_mag, peak_idx)
+
     half = n_fft // 2
-    peak_idx = int(np.argmax(cir_mag[:half]))
+    if refined_idx >= half:
+        delay_bins = n_fft - refined_idx
+    else:
+        delay_bins = refined_idx
 
-    # Parabolic interpolation for sub-bin accuracy
-    refined_idx = _parabolic_interpolation(cir_mag[:half], peak_idx)
-
-    # Convert index to time delay, then to distance
-    # tau = refined_idx / (n_fft * delta_f)
-    # distance = c * tau / 2
-    tau = refined_idx / (n_fft * FREQ_SPACING_HZ)
+    # Convert to time delay, then to distance.
+    # tau = delay_bins / (n_fft * delta_f);  distance = c * tau / 2
+    tau = delay_bins / (n_fft * FREQ_SPACING_HZ)
     distance = SPEED_OF_LIGHT * tau / 2.0
 
     return distance
@@ -298,9 +309,10 @@ def compute_phase_slope_distance(
 ) -> float | None:
     """Compute distance from the slope of the CTF phase vs frequency.
 
-    With CTF formed as the product (PCT_local * PCT_remote), the phase is
-    2*theta_propagation = 2*pi*f*tau where tau is the round-trip delay,
-    so the slope is positive and distance = c * slope / (4*pi).
+    With CTF formed as PCT_local * PCT_remote the phase encodes the
+    round-trip propagation delay, but the controller's PCT sign convention
+    makes the slope *negative* for a positive distance, so the formula
+    carries a leading minus (matching Nordic's reference implementation).
     """
     local_pct = i_local + 1j * q_local
     remote_pct = i_remote + 1j * q_remote
@@ -327,7 +339,7 @@ def compute_phase_slope_distance(
     coeffs = np.polyfit(freqs_valid, phases_unwrapped, 1)
     slope = coeffs[0]
 
-    distance = SPEED_OF_LIGHT * slope / (4.0 * np.pi)
+    distance = -SPEED_OF_LIGHT * slope / (4.0 * np.pi)
     return distance
 
 
@@ -478,9 +490,13 @@ def parse_args() -> argparse.Namespace:
         help="Moving average window size (default: 5)",
     )
     p.add_argument(
-        "--weights", type=float, nargs=3, default=[0.25, 0.50, 0.25],
+        "--weights", type=float, nargs=3,
+        default=[DEFAULT_WEIGHT_RTT, DEFAULT_WEIGHT_IFFT, DEFAULT_WEIGHT_SLOPE],
         metavar=("RTT", "IFFT", "SLOPE"),
-        help="Weights for RTT, IFFT, Phase Slope (default: 0.25 0.50 0.25)",
+        help=(
+            "Weights for RTT, IFFT, Phase Slope "
+            f"(default: {DEFAULT_WEIGHT_RTT} {DEFAULT_WEIGHT_IFFT} {DEFAULT_WEIGHT_SLOPE})"
+        ),
     )
     p.add_argument(
         "--raw", action="store_true",
