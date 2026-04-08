@@ -52,6 +52,7 @@ struct ranging_session {
 	int32_t most_recent_local_counter;
 	int32_t dropped_counter;
 	int32_t pending_peer_counter;
+	int16_t pending_freq_compensation;
 	struct k_sem sem_local_steps;
 
 	/* Step data buffers */
@@ -314,6 +315,21 @@ struct iq_parse_ctx {
 	uint8_t ok_tone_count[IQ_MAX_ANTENNA_PATHS];
 };
 
+static inline void iq_set_valid(struct iq_antenna_path *p, uint8_t tone)
+{
+	p->valid_mask[tone >> 3] |= (uint8_t)(1u << (tone & 0x7));
+}
+
+static inline void iq_set_quality(struct iq_antenna_path *p, uint8_t tone,
+				  uint8_t quality)
+{
+	uint8_t shift = (tone & 0x3) * 2u;
+	uint8_t idx = tone >> 2;
+
+	p->tone_quality[idx] &= (uint8_t)~(0x3u << shift);
+	p->tone_quality[idx] |= (uint8_t)((quality & 0x3u) << shift);
+}
+
 static bool iq_step_cb(struct bt_le_cs_subevent_step *local_step,
 		       struct bt_le_cs_subevent_step *peer_step, void *user_data)
 {
@@ -339,6 +355,25 @@ static bool iq_step_cb(struct bt_le_cs_subevent_step *local_step,
 			report->rtt_half_ns += local_rtt->toa_tod_initiator -
 					       peer_rtt->tod_toa_reflector;
 			report->rtt_count++;
+		}
+		return true;
+	}
+
+	if (local_step->mode == 0) {
+		/* The PDF (p.16) calls this out: mode-0 produces the FFO that the
+		 * Initiator uses to align timing/phase. We expose the controller's
+		 * measured frequency offset (initiator side) for downstream sanity
+		 * checks; the per-procedure value from the subevent header is
+		 * preferred when available, this is the per-step fallback.
+		 */
+		const struct bt_hci_le_cs_step_data_mode_0_initiator *m0i =
+			(const struct bt_hci_le_cs_step_data_mode_0_initiator *)
+				local_step->data;
+
+		if (report->freq_compensation == IQ_FREQ_COMP_NA &&
+		    m0i->measured_freq_offset !=
+			    BT_HCI_LE_CS_SUBEVENT_RESULT_FREQ_COMPENSATION_NOT_AVAILABLE) {
+			report->freq_compensation = (int16_t)m0i->measured_freq_offset;
 		}
 		return true;
 	}
@@ -372,15 +407,31 @@ static bool iq_step_cb(struct bt_le_cs_subevent_step *local_step,
 			ctx->ok_tone_count[ap]++;
 		}
 
-		struct bt_le_cs_iq_sample local_iq =
-			bt_le_cs_parse_pct(local_ti[t].phase_correction_term);
-		struct bt_le_cs_iq_sample peer_iq =
-			bt_le_cs_parse_pct(peer_ti[t].phase_correction_term);
+		/* PCT == 0xFFFFFF means "not available" — leave the tone marked
+		 * invalid (the caller pre-fills tone_quality with UNAVAILABLE).
+		 */
+		const uint8_t *lpct = local_ti[t].phase_correction_term;
+		const uint8_t *ppct = peer_ti[t].phase_correction_term;
+		bool local_na = (lpct[0] == 0xFF && lpct[1] == 0xFF && lpct[2] == 0xFF);
+		bool peer_na = (ppct[0] == 0xFF && ppct[1] == 0xFF && ppct[2] == 0xFF);
+
+		if (local_na || peer_na) {
+			continue;
+		}
+
+		struct bt_le_cs_iq_sample local_iq = bt_le_cs_parse_pct(lpct);
+		struct bt_le_cs_iq_sample peer_iq = bt_le_cs_parse_pct(ppct);
 
 		report->ap[ap].i_local[idx] = local_iq.i;
 		report->ap[ap].q_local[idx] = local_iq.q;
 		report->ap[ap].i_remote[idx] = peer_iq.i;
 		report->ap[ap].q_remote[idx] = peer_iq.q;
+		iq_set_valid(&report->ap[ap], idx);
+
+		/* Per-tone quality = worst (numerically max) of local/peer */
+		uint8_t qmax = MAX(local_ti[t].quality_indicator,
+				   peer_ti[t].quality_indicator);
+		iq_set_quality(&report->ap[ap], idx, qmax);
 	}
 
 	return true;
@@ -446,6 +497,22 @@ static void ranging_data_cb(struct bt_conn *conn, uint16_t ranging_counter, int 
 	memset(&report, 0, sizeof(report));
 	memset(ctx.ok_tone_count, 0, sizeof(ctx.ok_tone_count));
 
+	/* Mark every tone as UNAVAILABLE quality until iq_step_cb proves
+	 * otherwise; valid_mask stays all-zero by the same memset.
+	 */
+	for (uint8_t ap = 0; ap < IQ_MAX_ANTENNA_PATHS; ap++) {
+		memset(report.ap[ap].tone_quality,
+		       (BT_HCI_LE_CS_TONE_QUALITY_UNAVAILABLE << 6) |
+			       (BT_HCI_LE_CS_TONE_QUALITY_UNAVAILABLE << 4) |
+			       (BT_HCI_LE_CS_TONE_QUALITY_UNAVAILABLE << 2) |
+			       BT_HCI_LE_CS_TONE_QUALITY_UNAVAILABLE,
+		       IQ_TONE_QUALITY_BYTES);
+	}
+
+	/* Seed the per-procedure FFO captured in subevent_result_cb. */
+	report.freq_compensation = s->pending_freq_compensation;
+	s->pending_freq_compensation = IQ_FREQ_COMP_NA;
+
 	bt_ras_rreq_rd_subevent_data_parse(&s->peer_steps, &s->local_steps,
 					   BT_CONN_LE_CS_ROLE_INITIATOR,
 					   iq_ranging_header_cb, NULL,
@@ -495,6 +562,18 @@ static void subevent_result_cb(struct bt_conn *conn,
 
 		s->most_recent_local_counter =
 			bt_ras_rreq_get_ranging_counter(result->header.procedure_counter);
+
+		/* New procedure starting — capture FFO from the subevent header.
+		 * Per spec, this is the controller's frequency compensation value
+		 * (0.01 ppm units) and is only valid on the Initiator role.
+		 */
+		if (result->header.frequency_compensation !=
+		    BT_HCI_LE_CS_SUBEVENT_RESULT_FREQ_COMPENSATION_NOT_AVAILABLE) {
+			s->pending_freq_compensation =
+				(int16_t)result->header.frequency_compensation;
+		} else {
+			s->pending_freq_compensation = IQ_FREQ_COMP_NA;
+		}
 	}
 
 	if (result->header.subevent_done_status == BT_CONN_LE_CS_SUBEVENT_ABORTED) {
@@ -934,6 +1013,7 @@ int session_mgr_start(const bt_addr_le_t *addr, uint16_t interval_ms,
 	s->most_recent_local_counter = PROCEDURE_COUNTER_NONE;
 	s->dropped_counter = PROCEDURE_COUNTER_NONE;
 	s->pending_peer_counter = PROCEDURE_COUNTER_NONE;
+	s->pending_freq_compensation = IQ_FREQ_COMP_NA;
 	s->ras_feature_bits = 0;
 
 	k_sem_init(&s->sem_connected, 0, 1);

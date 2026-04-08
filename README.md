@@ -103,7 +103,7 @@ IQ output is **off by default**. Enable it before starting a ranging session to 
 Once IQ output is enabled and a ranging session is active, raw IQ tone data is streamed as unsolicited responses after each Channel Sounding procedure:
 
 ```
-+IQ:<sid>,ap:<n>,rtt:<half_ns>,rn:<count>,<tq>,il:[...],ql:[...],ir:[...],qr:[...]
++IQ:<sid>,ap:<n>,rtt:<half_ns>,rn:<count>,<tq>,ffo:<int|na>,m:<hex>,q:<hex>,il:[...],ql:[...],ir:[...],qr:[...]
 ```
 
 | Field | Description |
@@ -112,19 +112,25 @@ Once IQ output is enabled and a ranging session is active, raw IQ tone data is s
 | `ap`  | Antenna path index |
 | `rtt` | Accumulated RTT in units of 0.5 ns |
 | `rn` | Number of valid RTT measurements |
-| `tq` | Tone quality (`ok` or `bad`) |
+| `tq` | Aggregate tone quality (`ok` or `bad`) — derived from a count of HIGH-quality tones |
+| `ffo` | Per-procedure frequency compensation in 0.01 ppm units (signed, from the controller's mode-0 measurement), or `na` if unavailable |
+| `m` | 75-bit per-tone validity bitmap as 20 hex chars (LSB-first within each byte; bit n of byte n/8 = tone n). A bit is set only when a valid PCT was received for that tone. |
+| `q` | Per-tone quality codes, 2 bits per tone packed LSB-first as 38 hex chars. Values: `0`=HIGH, `1`=MED, `2`=LOW, `3`=UNAVAILABLE. The worst of (local, peer) is reported. |
 | `il` | Local in-phase samples (75 integers, 12-bit signed) |
 | `ql` | Local quadrature samples (75 integers) |
 | `ir` | Remote in-phase samples (75 integers) |
 | `qr` | Remote quadrature samples (75 integers) |
 
-The IQ values are raw 12-bit signed Phase Correction Terms (range -2048 to 2047) across 75 tone channels (2404-2480 MHz, 1 MHz spacing).
+The IQ values are raw 12-bit signed Phase Correction Terms (range -2048 to 2047) across 75 tone channels (CS channels 2-76, i.e. 2404-2478 MHz at 1 MHz spacing). Tones whose corresponding bit in `m` is zero (CS channels not in the channel map, or with PCT marked "not available" by the controller) carry no useful data — receivers should mask them out before any IFFT or phase-slope analysis. The `q` field lets receivers further down-weight or drop LOW-quality tones.
 
 ### IQ Output Bandwidth
 
-Each antenna path produces one `+IQ` line. Worst-case line length is **1863 bytes** on the wire (1861 chars + `\r\n`), based on:
+Each antenna path produces one `+IQ` line. Worst-case line length is **1938 bytes** on the wire (1936 chars + `\r\n`), based on:
 
 - Header (`+IQ:255,ap:255,rtt:-2147483648,rn:255,bad,`): 42 chars
+- Frequency compensation (`ffo:-32768,`): 11 chars
+- Validity mask (`m:` + 20 hex + `,`): 23 chars
+- Tone quality (`q:` + 38 hex + `,`): 41 chars
 - 4 IQ arrays x (3 label + 1 `[` + 75 x 5-digit values + 74 commas + 1 `]`): 4 x 454 = 1816 chars
 - 3 array separators: 3 chars
 
@@ -133,13 +139,13 @@ The table below shows the maximum number of antenna paths that can be sustained 
 | Baud rate | Bytes/sec (8N1) | Max antenna paths/sec | Suitable for |
 |-----------|----------------:|----------------------:|--------------|
 | 9600      |             960 |                     0 | Not usable for IQ output |
-| 19200     |           1,920 |                     1 | 1 antenna path, 1 proc/sec |
-| 38400     |           3,840 |                     2 | 2 paths, or 1 path at 2 proc/sec |
-| 57600     |           5,760 |                     3 | 1x1 antenna at up to 3 proc/sec |
-| 115200    |          11,520 |                     6 | 4 paths at 1 proc/sec (default) |
-| 230400    |          23,040 |                    12 | 4 paths at up to 3 proc/sec |
-| 460800    |          46,080 |                    24 | Multiple sessions, multiple antennas |
-| 921600    |          92,160 |                    49 | All configurations with headroom |
+| 19200     |           1,920 |                     0 | Not usable for IQ output |
+| 38400     |           3,840 |                     1 | 1 antenna path, 1 proc/sec |
+| 57600     |           5,760 |                     2 | 2 paths, or 1 path at 2 proc/sec |
+| 115200    |          11,520 |                     5 | 4 paths at 1 proc/sec (default) |
+| 230400    |          23,040 |                    11 | 4 paths at up to 2 proc/sec |
+| 460800    |          46,080 |                    23 | Multiple sessions, multiple antennas |
+| 921600    |          92,160 |                    47 | All configurations with headroom |
 
 The default baudrate is 115200, which supports the common case of a single-antenna initiator and reflector (2 antenna paths per procedure at 1 Hz) with margin. For multi-antenna configurations or higher procedure rates, increase the baudrate with `ATS baudrate=<num>`. The OK response is sent at the old baudrate before the switch takes effect. The setting is persisted across reboots.
 
@@ -163,8 +169,8 @@ AT+RANGE mac=EC3CC2C23110,int=500
 OK
 +RANGE:1 CONNECTING
 +RANGE:1 ACTIVE
-+IQ:1,rtt:1234,rn:3,ok,il:[45,-102,78,...],ql:[...],ir:[...],qr:[...]
-+IQ:1,rtt:1180,rn:3,ok,il:[42,-98,80,...],ql:[...],ir:[...],qr:[...]
++IQ:1,ap:0,rtt:1234,rn:3,ok,ffo:-12,m:fffffe7f3fffffffffff,q:00000000000000000000000000000000000000,il:[45,-102,78,...],ql:[...],ir:[...],qr:[...]
++IQ:1,ap:0,rtt:1180,rn:3,ok,ffo:-12,m:fffffe7f3fffffffffff,q:00000000000000000000000000000000000000,il:[42,-98,80,...],ql:[...],ir:[...],qr:[...]
 ...
 AT+RANGEX 1
 OK

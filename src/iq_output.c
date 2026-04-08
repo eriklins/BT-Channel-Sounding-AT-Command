@@ -9,15 +9,24 @@ LOG_MODULE_REGISTER(iq_output, LOG_LEVEL_INF);
 
 /*
  * Output format (one line per antenna path per report):
- *   +IQ:<sid>,ap:<ap>,rtt:<half_ns>,rn:<count>,<tq>,il:[...],ql:[...],ir:[...],qr:[...]
+ *   +IQ:<sid>,ap:<ap>,rtt:<half_ns>,rn:<count>,<tq>,ffo:<int|na>,
+ *       m:<hex>,q:<hex>,il:[...],ql:[...],ir:[...],qr:[...]
+ *
+ * Fields:
+ *   ffo  – per-procedure frequency compensation in 0.01 ppm units (signed),
+ *          or "na" if the controller did not report it.
+ *   m    – 75-bit per-tone validity bitmap, packed LSB-first into bytes,
+ *          printed as 20 hex chars (low nibble of byte 0 = tones 0..3).
+ *   q    – per-tone quality (2 bits/tone), packed LSB-first, printed as 38
+ *          hex chars. Values: 0=HIGH, 1=MED, 2=LOW, 3=UNAVAILABLE.
  *
  * IQ values are integers (12-bit signed PCT, range -2048..2047).
  * 75 values per array × 4 arrays = 300 integers per line.
  *
  * Worst case per value: "-2048," = 6 chars. 300 × 6 = 1800 chars for data,
- * plus header ~30 chars, plus brackets = ~1870 bytes per line.
+ * plus headers and metadata ≈ 130 bytes, plus brackets = ~1950 bytes per line.
  */
-#define IQ_BUF_SIZE 2048
+#define IQ_BUF_SIZE 2304
 
 static char iq_buf[IQ_BUF_SIZE];
 
@@ -29,6 +38,7 @@ struct iq_queue_entry {
 	uint8_t ap_index;
 	int32_t rtt_half_ns;
 	uint8_t rtt_count;
+	int16_t freq_compensation;
 	struct iq_antenna_path path;
 };
 
@@ -52,6 +62,20 @@ bool iq_output_is_enabled(void)
 #define IQ_OUTPUT_STACK_SIZE 2048
 static K_THREAD_STACK_DEFINE(iq_output_stack, IQ_OUTPUT_STACK_SIZE);
 static struct k_thread iq_output_thread_data;
+
+static int append_hex_bytes(char *buf, int pos, int max, const char *label,
+			    const uint8_t *bytes, int count)
+{
+	pos += snprintk(buf + pos, max - pos, "%s", label);
+
+	for (int i = 0; i < count; i++) {
+		pos += snprintk(buf + pos, max - pos, "%02x", bytes[i]);
+		if (pos >= max - 1) {
+			return pos;
+		}
+	}
+	return pos;
+}
 
 static int append_int16_array(char *buf, int pos, int max, const char *label,
 			      const int16_t *values, int count)
@@ -84,6 +108,25 @@ static void do_output(const struct iq_queue_entry *e)
 			"+IQ:%u,ap:%u,rtt:%d,rn:%u,%s,",
 			e->session_id, e->ap_index, e->rtt_half_ns,
 			e->rtt_count, tq);
+
+	if (e->freq_compensation == IQ_FREQ_COMP_NA) {
+		pos += snprintk(iq_buf + pos, IQ_BUF_SIZE - pos, "ffo:na,");
+	} else {
+		pos += snprintk(iq_buf + pos, IQ_BUF_SIZE - pos, "ffo:%d,",
+				e->freq_compensation);
+	}
+
+	pos = append_hex_bytes(iq_buf, pos, IQ_BUF_SIZE, "m:",
+			       path->valid_mask, IQ_VALID_MASK_BYTES);
+	if (pos < IQ_BUF_SIZE - 1) {
+		iq_buf[pos++] = ',';
+	}
+
+	pos = append_hex_bytes(iq_buf, pos, IQ_BUF_SIZE, "q:",
+			       path->tone_quality, IQ_TONE_QUALITY_BYTES);
+	if (pos < IQ_BUF_SIZE - 1) {
+		iq_buf[pos++] = ',';
+	}
 
 	pos = append_int16_array(iq_buf, pos, IQ_BUF_SIZE,
 				 "il:", path->i_local, IQ_NUM_CHANNELS);
@@ -141,6 +184,7 @@ void iq_output_report(uint8_t session_id, const struct iq_report *report)
 		iq_queue[idx].ap_index = ap;
 		iq_queue[idx].rtt_half_ns = report->rtt_half_ns;
 		iq_queue[idx].rtt_count = report->rtt_count;
+		iq_queue[idx].freq_compensation = report->freq_compensation;
 		memcpy(&iq_queue[idx].path, &report->ap[ap],
 		       sizeof(struct iq_antenna_path));
 		iq_prod_idx++;

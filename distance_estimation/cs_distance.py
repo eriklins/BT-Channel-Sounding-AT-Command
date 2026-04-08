@@ -47,6 +47,10 @@ class IQReport:
     q_local: np.ndarray
     i_remote: np.ndarray
     q_remote: np.ndarray
+    # Optional fields populated when present in the firmware output.
+    valid_mask: np.ndarray | None = None  # bool array, length NUM_TONES
+    tone_quality: np.ndarray | None = None  # uint8 0-3, length NUM_TONES
+    freq_compensation: int | None = None  # 0.01 ppm units, signed
 
 
 @dataclass
@@ -83,14 +87,19 @@ class DistanceTracker:
 # Parser
 # ---------------------------------------------------------------------------
 
-# Regex for +IQ lines:
-# +IQ:<sid>,ap:<ap>,rtt:<half_ns>,rn:<count>,<tq>,il:[...],ql:[...],ir:[...],qr:[...]
+# Regex for +IQ lines. The new firmware adds ffo:, m:, q: between the quality
+# tag and the IQ arrays; older firmware omits them. Make those fields optional
+# so the script remains backwards-compatible.
+#
+# +IQ:<sid>,ap:<ap>,rtt:<half_ns>,rn:<count>,<tq>[,ffo:<n|na>,m:<hex>,q:<hex>],
+#     il:[...],ql:[...],ir:[...],qr:[...]
 _IQ_RE = re.compile(
     r"^\+IQ:(\d+),"
     r"ap:(\d+),"
     r"rtt:(-?\d+),"
     r"rn:(\d+),"
     r"(ok|bad),"
+    r"(?:ffo:(-?\d+|na),m:([0-9a-fA-F]+),q:([0-9a-fA-F]+),)?"
     r"il:\[([^\]]*)\],"
     r"ql:\[([^\]]*)\],"
     r"ir:\[([^\]]*)\],"
@@ -102,6 +111,33 @@ def _parse_int_array(s: str) -> np.ndarray:
     return np.array([int(x) for x in s.split(",")], dtype=np.float64)
 
 
+def _unpack_valid_mask(hex_str: str) -> np.ndarray:
+    """Unpack a hex-encoded validity bitmap into a length-NUM_TONES bool array.
+
+    Bit n of byte n/8 corresponds to tone n (LSB-first within each byte).
+    """
+    raw = bytes.fromhex(hex_str)
+    out = np.zeros(NUM_TONES, dtype=bool)
+    for n in range(NUM_TONES):
+        byte_idx = n >> 3
+        if byte_idx >= len(raw):
+            break
+        out[n] = bool((raw[byte_idx] >> (n & 0x7)) & 0x1)
+    return out
+
+
+def _unpack_tone_quality(hex_str: str) -> np.ndarray:
+    """Unpack 2-bits-per-tone quality codes (0=HIGH, 1=MED, 2=LOW, 3=NA)."""
+    raw = bytes.fromhex(hex_str)
+    out = np.full(NUM_TONES, 3, dtype=np.uint8)
+    for n in range(NUM_TONES):
+        byte_idx = n >> 2
+        if byte_idx >= len(raw):
+            break
+        out[n] = (raw[byte_idx] >> ((n & 0x3) * 2)) & 0x3
+    return out
+
+
 def parse_iq_line(line: str) -> IQReport | None:
     """Parse a +IQ: line into an IQReport. Returns None for non-IQ lines."""
     line = line.strip()
@@ -109,13 +145,22 @@ def parse_iq_line(line: str) -> IQReport | None:
     if not m:
         return None
 
-    i_local = _parse_int_array(m.group(6))
-    q_local = _parse_int_array(m.group(7))
-    i_remote = _parse_int_array(m.group(8))
-    q_remote = _parse_int_array(m.group(9))
+    ffo_str, mask_hex, qual_hex = m.group(6), m.group(7), m.group(8)
+    i_local = _parse_int_array(m.group(9))
+    q_local = _parse_int_array(m.group(10))
+    i_remote = _parse_int_array(m.group(11))
+    q_remote = _parse_int_array(m.group(12))
 
     if any(len(a) != NUM_TONES for a in [i_local, q_local, i_remote, q_remote]):
         return None
+
+    valid_mask = _unpack_valid_mask(mask_hex) if mask_hex else None
+    tone_quality = _unpack_tone_quality(qual_hex) if qual_hex else None
+    freq_comp: int | None
+    if ffo_str is None or ffo_str == "na":
+        freq_comp = None
+    else:
+        freq_comp = int(ffo_str)
 
     return IQReport(
         sid=int(m.group(1)),
@@ -127,6 +172,9 @@ def parse_iq_line(line: str) -> IQReport | None:
         q_local=q_local,
         i_remote=i_remote,
         q_remote=q_remote,
+        valid_mask=valid_mask,
+        tone_quality=tone_quality,
+        freq_compensation=freq_comp,
     )
 
 
@@ -175,21 +223,37 @@ def compute_ifft_distance(
     i_remote: np.ndarray,
     q_remote: np.ndarray,
     oversample: int = 16,
+    tone_mask: np.ndarray | None = None,
 ) -> float | None:
     """Compute distance via IFFT of the Channel Transfer Function.
 
     Steps:
       1. Form complex PCT vectors from local and remote IQ data
-      2. Compute CTF via conjugate multiplication (eliminates LO phase offset)
-      3. Zero-pad and IFFT to get Channel Impulse Response
-      4. Find peak with parabolic interpolation
-      5. Convert peak index to distance
+      2. Compute CTF as the product of the two PCTs. Per the BT spec
+         (PCT_local + PCT_remote = 2*theta_propagation), it is the *sum* of
+         the two PCT phases that cancels the LO phase offset and isolates
+         the round-trip propagation phase. The complex *product* (not the
+         conjugate product) implements that sum.
+      3. Zero out tones the firmware reported as invalid / low quality
+      4. Zero-pad and IFFT to get Channel Impulse Response
+      5. Find peak with parabolic interpolation
+      6. Convert peak index to distance
     """
     local_pct = i_local + 1j * q_local
     remote_pct = i_remote + 1j * q_remote
 
-    # Channel Transfer Function: H(k) = local(k) * conj(remote(k))
-    ctf = local_pct * np.conj(remote_pct)
+    # Channel Transfer Function: H(k) = local(k) * remote(k).
+    # We then conjugate so the IFFT peak appears at a positive delay in the
+    # lower half of the result (the controller's PCT sign convention puts
+    # the un-conjugated peak in the upper half — Nordic's reference compensates
+    # for this with a leading minus in the phase-slope formula).
+    ctf = np.conj(local_pct * remote_pct)
+
+    # Mask out tones the device flagged as invalid / unmeasured. Without this,
+    # CS channels excluded from the channel map (e.g. the BLE primary
+    # advertising channels) appear as hard zeros and distort the IFFT peak.
+    if tone_mask is not None:
+        ctf = ctf * tone_mask.astype(ctf.dtype)
 
     # Check for all-zero data
     if np.all(np.abs(ctf) < 1e-12):
@@ -230,21 +294,28 @@ def compute_phase_slope_distance(
     q_local: np.ndarray,
     i_remote: np.ndarray,
     q_remote: np.ndarray,
+    tone_mask: np.ndarray | None = None,
 ) -> float | None:
     """Compute distance from the slope of the CTF phase vs frequency.
 
-    The phase of H(f) is: phi(f) = -2*pi*tau*f + phi_0
-    Distance = -c * slope / (4*pi)
+    With CTF formed as the product (PCT_local * PCT_remote), the phase is
+    2*theta_propagation = 2*pi*f*tau where tau is the round-trip delay,
+    so the slope is positive and distance = c * slope / (4*pi).
     """
     local_pct = i_local + 1j * q_local
     remote_pct = i_remote + 1j * q_remote
 
-    ctf = local_pct * np.conj(remote_pct)
+    # Sum of PCT phases (= 2*theta_propagation) cancels the LO offset.
+    ctf = local_pct * remote_pct
 
-    # Skip tones with near-zero magnitude (unreliable phase)
-    magnitudes = np.abs(ctf)
-    threshold = np.max(magnitudes) * 0.1
-    valid = magnitudes > threshold
+    # Prefer the firmware's per-tone validity mask when available; fall back
+    # to a magnitude threshold for legacy firmware.
+    if tone_mask is not None:
+        valid = tone_mask.copy()
+    else:
+        magnitudes = np.abs(ctf)
+        threshold = np.max(magnitudes) * 0.1
+        valid = magnitudes > threshold
     if np.sum(valid) < 10:
         return None
 
@@ -256,13 +327,29 @@ def compute_phase_slope_distance(
     coeffs = np.polyfit(freqs_valid, phases_unwrapped, 1)
     slope = coeffs[0]
 
-    distance = -SPEED_OF_LIGHT * slope / (4.0 * np.pi)
+    distance = SPEED_OF_LIGHT * slope / (4.0 * np.pi)
     return distance
 
 
 # ---------------------------------------------------------------------------
 # Combined estimate
 # ---------------------------------------------------------------------------
+
+
+def _build_tone_mask(report: IQReport) -> np.ndarray | None:
+    """Combine the firmware's validity bitmap and per-tone quality into a
+    single boolean mask. Tones marked LOW or UNAVAILABLE are dropped.
+    Returns None when neither field is present (legacy firmware)."""
+    if report.valid_mask is None and report.tone_quality is None:
+        return None
+
+    mask = np.ones(NUM_TONES, dtype=bool)
+    if report.valid_mask is not None:
+        mask &= report.valid_mask
+    if report.tone_quality is not None:
+        # 0=HIGH, 1=MED are usable; 2=LOW, 3=UNAVAILABLE are dropped.
+        mask &= report.tone_quality < 2
+    return mask
 
 
 def compute_distance(
@@ -272,11 +359,14 @@ def compute_distance(
 ) -> DistanceEstimate:
     """Compute distance using all methods and produce a weighted combination."""
     rtt_m = compute_rtt_distance(report.rtt_half_ns, report.rtt_count)
+    tone_mask = _build_tone_mask(report)
     ifft_m = compute_ifft_distance(
-        report.i_local, report.q_local, report.i_remote, report.q_remote, oversample
+        report.i_local, report.q_local, report.i_remote, report.q_remote,
+        oversample, tone_mask=tone_mask,
     )
     slope_m = compute_phase_slope_distance(
-        report.i_local, report.q_local, report.i_remote, report.q_remote
+        report.i_local, report.q_local, report.i_remote, report.q_remote,
+        tone_mask=tone_mask,
     )
 
     # Weighted combination of available estimates

@@ -79,25 +79,37 @@ distance = c * (rtt_half_ns / rtt_count) * 0.5ns / 2
 Accuracy: ~1 m (limited by 0.5 ns resolution = 7.5 cm per unit).
 
 ### 2. IFFT (Phase-Based Ranging)
-The primary high-accuracy method. Uses the 75 tone Phase Correction Terms (PCTs) at 1 MHz spacing across 2404-2480 MHz.
+The primary high-accuracy method. Uses the 75 tone Phase Correction Terms (PCTs) at 1 MHz spacing across CS channels 2-76 (2404-2478 MHz).
 
 1. Form complex PCT vectors from local and remote IQ data
-2. Compute Channel Transfer Function: `H(k) = PCT_local(k) * conj(PCT_remote(k))`
-3. Zero-pad to `75 * oversample` points for improved resolution
-4. IFFT to obtain Channel Impulse Response (CIR)
-5. Peak detection with parabolic interpolation for sub-bin accuracy
-6. Convert peak delay to distance: `d = c * tau / 2`
+2. Compute Channel Transfer Function: `H(k) = PCT_local(k) * PCT_remote(k)`
+3. **Mask out tones the firmware reported as invalid or LOW/UNAVAILABLE quality** — see below
+4. Zero-pad to `75 * oversample` points for improved resolution
+5. IFFT to obtain Channel Impulse Response (CIR)
+6. Peak detection with parabolic interpolation for sub-bin accuracy
+7. Convert peak delay to distance: `d = c * tau / 2`
 
-The conjugate multiplication eliminates the local oscillator phase offset common to both devices. With 16x oversampling and parabolic interpolation, sub-decimeter accuracy is achievable in line-of-sight conditions.
+The plain (non-conjugate) product implements the *sum* of the two PCT phases. Per the BT spec the local LO phases enter the two PCTs with opposite signs, so the sum cancels them and leaves `2*theta_propagation`. With 16x oversampling and parabolic interpolation, sub-decimeter accuracy is achievable in line-of-sight conditions.
 
 ### 3. Phase Slope
 Supplementary cross-check method. Fits a linear regression to the unwrapped phase of the CTF vs frequency. The slope is proportional to the time-of-flight.
 
 ```
-distance = -c * slope / (4 * pi)
+distance = c * slope / (4 * pi)
 ```
 
-Less robust in multipath environments but provides an independent estimate.
+Less robust in multipath environments but provides an independent estimate. The same per-tone validity mask is applied before the linear fit.
+
+### Per-Tone Validity and Quality
+Channel Sounding does not necessarily measure all 75 tones in every procedure: the BLE primary advertising channels (2402, 2426, 2480 MHz) are excluded from the channel map, the channel selection algorithm may use a subset of the remaining channels, and individual tones can be flagged "not available" by the controller. The firmware reports this on every `+IQ` line via two fields:
+
+- `m` — 75-bit validity bitmap; bit set ⇔ a valid PCT was received for that tone.
+- `q` — 2 bits per tone (`0`=HIGH, `1`=MED, `2`=LOW, `3`=UNAVAILABLE).
+
+The script unpacks both, ANDs them into a single boolean tone mask (HIGH+MED kept, LOW/UNAVAILABLE dropped), and zeros out the corresponding bins of the CTF before the IFFT. Without this masking the unmeasured tones would appear as hard zeros in an otherwise dense spectrum and distort the channel impulse response peak. For backwards compatibility, lines from older firmware (without `m`/`q`/`ffo` fields) still parse and fall back to the old magnitude-threshold heuristic for the phase-slope method.
+
+### Frequency Compensation
+The optional `ffo` field carries the controller's per-procedure frequency compensation value (mode-0 result, in 0.01 ppm units). The script parses it into `IQReport.freq_compensation` for diagnostics and CSV logging; the IFFT and phase-slope estimators do not currently apply software compensation since the controller has already applied it to the PCTs we receive.
 
 ### Combining Estimates
 The three estimates are combined using configurable weights (default: RTT 25%, IFFT 50%, Phase Slope 25%). Only estimates from measurements with `ok` tone quality are included in the moving average.
@@ -106,7 +118,7 @@ The three estimates are combined using configurable weights (default: RTT 25%, I
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| Tone channels | 75 | 2404-2480 MHz, 1 MHz spacing |
+| Tone channels | 75 | CS channels 2-76, 2404-2478 MHz, 1 MHz spacing |
 | Bandwidth | 75 MHz | Determines resolution |
 | Max unambiguous range | ~150 m | c / (2 * 1 MHz) |
 | RTT unit | 0.5 ns | ~7.5 cm per unit |
@@ -116,6 +128,6 @@ The three estimates are combined using configurable weights (default: RTT 25%, I
 - **Line of sight**: Multipath reflections degrade IFFT and Phase Slope estimates
 - **Antenna orientation**: Keep antennas oriented consistently; the antenna radiation pattern affects phase measurements
 - **Averaging**: Increase `--avg-window` for more stable readings at the cost of responsiveness
-- **Quality filtering**: Measurements marked `BAD` (fewer than 15/75 good tones) are excluded from averaging
+- **Quality filtering**: Measurements marked `BAD` (fewer than 15/75 good tones) are excluded from averaging. Per-tone LOW/UNAVAILABLE flags are also dropped from the IFFT and phase-slope inputs automatically.
 - **Oversampling**: Higher `--oversample` values improve IFFT peak resolution but use more memory; 16 is a good default
 - **Baud rate**: Ensure sufficient UART bandwidth for your antenna path count and procedure rate (see main README)
