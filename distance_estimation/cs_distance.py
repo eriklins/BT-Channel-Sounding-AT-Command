@@ -402,6 +402,28 @@ def compute_distance(
     )
 
 
+_COMBINE_METHODS = {"avg"}
+
+
+def combine_antenna_paths(
+    estimates: list[DistanceEstimate],
+    method: str,
+) -> DistanceEstimate:
+    """Combine distance estimates from multiple antenna paths into one."""
+    if method == "avg":
+        def _avg(values: list[float | None]) -> float | None:
+            valid = [v for v in values if v is not None]
+            return float(np.mean(valid)) if valid else None
+
+        return DistanceEstimate(
+            rtt_m=_avg([e.rtt_m for e in estimates]),
+            ifft_m=_avg([e.ifft_m for e in estimates]),
+            phase_slope_m=_avg([e.phase_slope_m for e in estimates]),
+            combined_m=_avg([e.combined_m for e in estimates]),
+        )
+    raise ValueError(f"Unknown antenna combination method: {method!r}")
+
+
 # ---------------------------------------------------------------------------
 # Formatting
 # ---------------------------------------------------------------------------
@@ -417,10 +439,12 @@ def format_result(
     report: IQReport,
     est: DistanceEstimate,
     avg: float,
+    ap_label: str | None = None,
 ) -> str:
     """Format a single measurement result for console output."""
     quality = "ok " if report.quality_ok else "BAD"
-    header = f"[Session {report.sid}, AP {report.ap} {quality}]"
+    ap_str = ap_label if ap_label is not None else str(report.ap)
+    header = f"[Session {report.sid}, AP {ap_str} {quality}]"
 
     return (
         f"{header}  RTT:{_fmt(est.rtt_m)}  IFFT:{_fmt(est.ifft_m)}"
@@ -436,7 +460,7 @@ def format_result(
 
 class CSVLogger:
     def __init__(self, path: str):
-        self._file = open(path, "w", newline="")
+        self._file = open(path, "a", newline="")
         self._writer = csv.writer(self._file)
         self._writer.writerow([
             "timestamp", "session", "antenna_path", "quality",
@@ -444,11 +468,12 @@ class CSVLogger:
         ])
         self._file.flush()
 
-    def log(self, report: IQReport, est: DistanceEstimate, avg: float):
+    def log(self, report: IQReport, est: DistanceEstimate, avg: float,
+            ap_label: str | None = None):
         self._writer.writerow([
             f"{time.time():.3f}",
             report.sid,
-            report.ap,
+            ap_label if ap_label is not None else report.ap,
             "ok" if report.quality_ok else "bad",
             f"{est.rtt_m:.4f}" if est.rtt_m is not None else "",
             f"{est.ifft_m:.4f}" if est.ifft_m is not None else "",
@@ -494,18 +519,32 @@ def parse_args() -> argparse.Namespace:
         "--log", type=str, default=None, metavar="FILE",
         help="Log measurements to CSV file",
     )
+    p.add_argument(
+        "--ant-comb", type=str, default=None, metavar="METHOD",
+        help="Combine antenna paths using METHOD (e.g. 'avg')",
+    )
     return p.parse_args()
 
 
 def main():
     args = parse_args()
     weights = tuple(args.weights)
+    ant_comb = args.ant_comb
+    if ant_comb is not None and ant_comb not in _COMBINE_METHODS:
+        print(
+            f"Unknown --ant-comb method {ant_comb!r}. "
+            f"Supported: {', '.join(sorted(_COMBINE_METHODS))}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     tracker = DistanceTracker(window_size=args.avg_window)
     csv_logger = CSVLogger(args.log) if args.log else None
 
     print(f"Connecting to {args.port} at {args.baud} baud...")
     print(f"IFFT oversample: {args.oversample}x  |  Avg window: {args.avg_window}")
     print(f"Weights - RTT: {weights[0]:.2f}  IFFT: {weights[1]:.2f}  Slope: {weights[2]:.2f}")
+    if ant_comb:
+        print(f"Antenna combination: {ant_comb}")
     if csv_logger:
         print(f"Logging to: {args.log}")
     print("-" * 72)
@@ -537,6 +576,39 @@ def main():
         sys.exit(1)
     print("OK")
 
+    # Buffer for antenna path combination: {sid: {ap: (report, est), ...}}
+    ap_buf: dict[int, dict[int, tuple[IQReport, DistanceEstimate]]] = {}
+
+    def _flush_combined(sid: int) -> None:
+        """Combine buffered AP results for *sid*, output, and clear."""
+        buf = ap_buf.pop(sid, {})
+        if not buf:
+            return
+        reports = [r for r, _ in buf.values()]
+        estimates = [e for _, e in buf.values()]
+        combined_est = combine_antenna_paths(estimates, ant_comb)
+        # Use first report as representative (for sid, quality flag).
+        rep = reports[0]
+        # Any-OK: mark quality_ok if at least one AP was ok.
+        quality_ok = any(r.quality_ok for r in reports)
+        # Temporarily patch for format/log (sid is the same for all).
+        rep_proxy = IQReport(
+            sid=rep.sid, ap=-1,
+            rtt_half_ns=0, rtt_count=0,
+            quality_ok=quality_ok,
+            i_local=np.empty(0), q_local=np.empty(0),
+            i_remote=np.empty(0), q_remote=np.empty(0),
+        )
+        ap_key = -1  # sentinel for combined path
+        if combined_est.combined_m is not None and quality_ok:
+            avg = tracker.update(sid, ap_key, combined_est.combined_m)
+        else:
+            avg = tracker.average(sid, ap_key)
+        label = ant_comb
+        print(format_result(rep_proxy, combined_est, avg, ap_label=label))
+        if csv_logger:
+            csv_logger.log(rep_proxy, combined_est, avg, ap_label=label)
+
     try:
         while True:
             raw = ser.readline()
@@ -557,19 +629,35 @@ def main():
 
             est = compute_distance(report, args.oversample, weights)
 
-            if est.combined_m is not None and report.quality_ok:
-                avg = tracker.update(report.sid, report.ap, est.combined_m)
+            if ant_comb is None:
+                # No combination — original per-AP behaviour.
+                if est.combined_m is not None and report.quality_ok:
+                    avg = tracker.update(report.sid, report.ap, est.combined_m)
+                else:
+                    avg = tracker.average(report.sid, report.ap)
+
+                print(format_result(report, est, avg))
+
+                if csv_logger:
+                    csv_logger.log(report, est, avg)
             else:
-                avg = tracker.average(report.sid, report.ap)
-
-            print(format_result(report, est, avg))
-
-            if csv_logger:
-                csv_logger.log(report, est, avg)
+                # Buffer per-AP results; AP 0 always starts a new group.
+                sid = report.sid
+                if sid not in ap_buf:
+                    ap_buf[sid] = {}
+                if report.ap == 0 and ap_buf[sid]:
+                    # AP 0 marks the start of a new round — flush previous.
+                    _flush_combined(sid)
+                    ap_buf[sid] = {}
+                ap_buf[sid][report.ap] = (report, est)
 
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:
+        # Flush any remaining buffered antenna path data.
+        if ant_comb is not None:
+            for sid in list(ap_buf):
+                _flush_combined(sid)
         # Disable IQ output before closing
         try:
             ser.write(b"AT+IQ off\r\n")

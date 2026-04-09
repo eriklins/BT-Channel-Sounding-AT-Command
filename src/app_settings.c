@@ -17,7 +17,7 @@ LOG_MODULE_REGISTER(app_settings, LOG_LEVEL_INF);
 #define SETTINGS_KEY_BAUDRATE  "cs_at/baud"
 #define NAME_MAX_LEN           CONFIG_BT_DEVICE_NAME_MAX
 #define ROLE_MAX_LEN           16
-#define CONN_INT_DEFAULT_MS    400
+#define CONN_INT_DEFAULT_MS    100
 #define CONN_INT_MIN_MS        10
 #define CONN_INT_MAX_MS        400
 #define BAUDRATE_DEFAULT       115200

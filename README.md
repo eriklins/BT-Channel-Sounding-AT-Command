@@ -25,7 +25,7 @@ Built on the Nordic nRF Connect SDK v3.2.4. Targets nRF54L15-based hardware (tes
 | `ATS devicename=<name>` | Set advertised device name (quotes optional) | `ATS devicename="My Device"` |
 | `ATS adv_autostart=?` | Query adv_autostart setting | `ATS adv_autostart=?` -> `adv_autostart=n` |
 | `ATS adv_autostart=<y\|n>` | Auto-start advertising on boot (reflector only) | `ATS adv_autostart=y` |
-| `ATS conn_int=?` | Query BLE connection interval (ms) | `ATS conn_int=?` -> `conn_int=400` |
+| `ATS conn_int=?` | Query BLE connection interval (ms) | `ATS conn_int=?` -> `conn_int=100` |
 | `ATS conn_int=<ms>` | Set BLE connection interval (10-400 ms) | `ATS conn_int=50` |
 | `ATS baudrate=?` | Query current UART baudrate | `ATS baudrate=?` -> `baudrate=115200` |
 | `ATS baudrate=<num>` | Set UART baudrate (OK sent at old rate before switching) | `ATS baudrate=921600` |
@@ -220,7 +220,7 @@ A longer connection interval frees radio time for additional connections but slo
 | 2 concurrent devices | 50-100 ms | Balances throughput with scheduling headroom |
 | 3+ concurrent devices | 200-400 ms | Prevents radio scheduling conflicts |
 
-The default is 400 ms, which is conservative and works reliably for any number of devices. When connecting to only one or two devices, lowering `conn_int` significantly improves responsiveness.
+The default is 100 ms, which works well for typical single-connection setups with up to 2x2 antennas. For 3+ concurrent devices, increase `conn_int` to 200-400 ms to prevent radio scheduling conflicts.
 
 The value must be between 10 and 400 ms and should be a multiple of 1.25 ms (the BLE connection interval unit); non-aligned values are rounded down internally. Changes take effect on the next ranging session without requiring a reset; already-active sessions are not affected.
 
