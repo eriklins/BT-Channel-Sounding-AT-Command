@@ -417,18 +417,10 @@ def format_result(
     report: IQReport,
     est: DistanceEstimate,
     avg: float,
-    show_raw: bool,
 ) -> str:
     """Format a single measurement result for console output."""
     quality = "ok " if report.quality_ok else "BAD"
     header = f"[Session {report.sid}, AP {report.ap} {quality}]"
-
-    if show_raw:
-        return (
-            f"{header}  RTT:{_fmt(est.rtt_m)}  IFFT:{_fmt(est.ifft_m)}"
-            f"  Slope:{_fmt(est.phase_slope_m)}"
-            f"  Combined:{_fmt(est.combined_m)}  (avg:{_fmt(avg)})"
-        )
 
     return (
         f"{header}  RTT:{_fmt(est.rtt_m)}  IFFT:{_fmt(est.ifft_m)}"
@@ -497,10 +489,6 @@ def parse_args() -> argparse.Namespace:
             "Weights for RTT, IFFT, Phase Slope "
             f"(default: {DEFAULT_WEIGHT_RTT} {DEFAULT_WEIGHT_IFFT} {DEFAULT_WEIGHT_SLOPE})"
         ),
-    )
-    p.add_argument(
-        "--raw", action="store_true",
-        help="Show per-method estimates alongside combined",
     )
     p.add_argument(
         "--log", type=str, default=None, metavar="FILE",
@@ -574,7 +562,7 @@ def main():
             else:
                 avg = tracker.average(report.sid, report.ap)
 
-            print(format_result(report, est, avg, args.raw))
+            print(format_result(report, est, avg))
 
             if csv_logger:
                 csv_logger.log(report, est, avg)
