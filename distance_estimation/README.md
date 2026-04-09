@@ -32,8 +32,11 @@ First, configure the initiator via AT commands (set role, scan, start ranging). 
 | `baud` | (required) | Baud rate (e.g. `115200`) |
 | `--oversample` | `16` | IFFT zero-padding oversampling factor |
 | `--avg-window` | `5` | Moving average window size |
-| `--weights RTT IFFT SLOPE` | `0.25 0.50 0.25` | Weights for combining the three estimation methods |
+| `--weights RTT IFFT SLOPE` | `0.10 0.50 0.40` | Weights for combining the three estimation methods |
+| `--ref-dist METER` | off | Reference distance in meters; adds a `ref` column to terminal output and CSV |
 | `--log FILE` | off | Log all measurements to a CSV file |
+| `--ant-comb METHOD` | off | Combine antenna paths using METHOD (e.g. `avg`) |
+| `--take-samples NUM` | off | Stop after NUM output lines and terminate |
 
 ### Examples
 
@@ -52,12 +55,27 @@ Higher IFFT resolution with larger averaging window:
 python cs_distance.py /dev/ttyACM0 115200 --oversample 32 --avg-window 10
 ```
 
+Log with a known reference distance of 1.5 m (for accuracy evaluation):
+```bash
+python cs_distance.py /dev/ttyACM0 115200 --ref-dist 1.5 --log measurements.csv
+```
+
+Combine antenna paths by averaging:
+```bash
+python cs_distance.py /dev/ttyACM0 115200 --ant-comb avg
+```
+
+Collect exactly 20 samples and exit:
+```bash
+python cs_distance.py /dev/ttyACM0 115200 --take-samples 20 --log measurements.csv
+```
+
 ### Example Output
 
 ```
 Connecting to /dev/ttyACM0 at 115200 baud...
 IFFT oversample: 16x  |  Avg window: 5
-Weights - RTT: 0.25  IFFT: 0.50  Slope: 0.25
+Weights - RTT: 0.10  IFFT: 0.50  Slope: 0.40
 ------------------------------------------------------------------------
 [Session 1, AP 0 ok ]  RTT:  1.23m  IFFT:  1.18m  Slope:  1.25m  Combined:  1.20m  (avg:  1.21m)
 [Session 1, AP 0 ok ]  RTT:  1.20m  IFFT:  1.17m  Slope:  1.22m  Combined:  1.18m  (avg:  1.19m)
@@ -112,7 +130,7 @@ The script unpacks both, ANDs them into a single boolean tone mask (HIGH+MED kep
 The optional `ffo` field carries the controller's per-procedure frequency compensation value (mode-0 result, in 0.01 ppm units). The script parses it into `IQReport.freq_compensation` for diagnostics and CSV logging; the IFFT and phase-slope estimators do not currently apply software compensation since the controller has already applied it to the PCTs we receive.
 
 ### Combining Estimates
-The three estimates are combined using configurable weights (default: RTT 25%, IFFT 50%, Phase Slope 25%). Only estimates from measurements with `ok` tone quality are included in the moving average.
+The three estimates are combined using configurable weights (default: RTT 10%, IFFT 50%, Phase Slope 40%). Only estimates from measurements with `ok` tone quality are included in the moving average.
 
 ## Key Parameters
 

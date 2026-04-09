@@ -440,14 +440,16 @@ def format_result(
     est: DistanceEstimate,
     avg: float,
     ap_label: str | None = None,
+    ref_dist: float | None = None,
 ) -> str:
     """Format a single measurement result for console output."""
     quality = "ok " if report.quality_ok else "BAD"
     ap_str = ap_label if ap_label is not None else str(report.ap)
     header = f"[Session {report.sid}, AP {ap_str} {quality}]"
 
+    ref_str = f"  ref:{_fmt(ref_dist)}" if ref_dist is not None else ""
     return (
-        f"{header}  RTT:{_fmt(est.rtt_m)}  IFFT:{_fmt(est.ifft_m)}"
+        f"{header}{ref_str}  RTT:{_fmt(est.rtt_m)}  IFFT:{_fmt(est.ifft_m)}"
         f"  Slope:{_fmt(est.phase_slope_m)}"
         f"  Combined:{_fmt(est.combined_m)}  (avg:{_fmt(avg)})"
     )
@@ -459,18 +461,22 @@ def format_result(
 
 
 class CSVLogger:
-    def __init__(self, path: str):
+    def __init__(self, path: str, ref_dist: float | None = None):
         self._file = open(path, "a", newline="")
         self._writer = csv.writer(self._file)
-        self._writer.writerow([
+        self._ref_dist = ref_dist
+        header = [
             "timestamp", "session", "antenna_path", "quality",
             "rtt_m", "ifft_m", "phase_slope_m", "combined_m", "avg_m",
-        ])
+        ]
+        if self._ref_dist is not None:
+            header.insert(4, "ref_m")
+        self._writer.writerow(header)
         self._file.flush()
 
     def log(self, report: IQReport, est: DistanceEstimate, avg: float,
             ap_label: str | None = None):
-        self._writer.writerow([
+        row = [
             f"{time.time():.3f}",
             report.sid,
             ap_label if ap_label is not None else report.ap,
@@ -480,7 +486,10 @@ class CSVLogger:
             f"{est.phase_slope_m:.4f}" if est.phase_slope_m is not None else "",
             f"{est.combined_m:.4f}" if est.combined_m is not None else "",
             f"{avg:.4f}" if not np.isnan(avg) else "",
-        ])
+        ]
+        if self._ref_dist is not None:
+            row.insert(4, f"{self._ref_dist:.4f}")
+        self._writer.writerow(row)
         self._file.flush()
 
     def close(self):
@@ -516,12 +525,20 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--ref-dist", type=float, default=None, metavar="METER",
+        help="Reference distance in meters (adds a ref column to output and CSV)",
+    )
+    p.add_argument(
         "--log", type=str, default=None, metavar="FILE",
         help="Log measurements to CSV file",
     )
     p.add_argument(
         "--ant-comb", type=str, default=None, metavar="METHOD",
         help="Combine antenna paths using METHOD (e.g. 'avg')",
+    )
+    p.add_argument(
+        "--take-samples", type=int, default=None, metavar="NUM",
+        help="Stop after NUM output lines and terminate",
     )
     return p.parse_args()
 
@@ -537,17 +554,24 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
+    ref_dist = args.ref_dist
     tracker = DistanceTracker(window_size=args.avg_window)
-    csv_logger = CSVLogger(args.log) if args.log else None
+    csv_logger = CSVLogger(args.log, ref_dist=ref_dist) if args.log else None
 
     print(f"Connecting to {args.port} at {args.baud} baud...")
     print(f"IFFT oversample: {args.oversample}x  |  Avg window: {args.avg_window}")
     print(f"Weights - RTT: {weights[0]:.2f}  IFFT: {weights[1]:.2f}  Slope: {weights[2]:.2f}")
+    if ref_dist is not None:
+        print(f"Reference distance: {ref_dist:.2f} m")
     if ant_comb:
         print(f"Antenna combination: {ant_comb}")
+    if args.take_samples is not None:
+        print(f"Taking {args.take_samples} sample(s) then stopping")
     if csv_logger:
         print(f"Logging to: {args.log}")
     print("-" * 72)
+
+    samples_remaining = args.take_samples
 
     try:
         ser = serial.Serial(args.port, args.baud, timeout=1)
@@ -579,11 +603,12 @@ def main():
     # Buffer for antenna path combination: {sid: {ap: (report, est), ...}}
     ap_buf: dict[int, dict[int, tuple[IQReport, DistanceEstimate]]] = {}
 
-    def _flush_combined(sid: int) -> None:
-        """Combine buffered AP results for *sid*, output, and clear."""
+    def _flush_combined(sid: int) -> bool:
+        """Combine buffered AP results for *sid*, output, and clear.
+        Returns True if a line was printed."""
         buf = ap_buf.pop(sid, {})
         if not buf:
-            return
+            return False
         reports = [r for r, _ in buf.values()]
         estimates = [e for _, e in buf.values()]
         combined_est = combine_antenna_paths(estimates, ant_comb)
@@ -605,9 +630,11 @@ def main():
         else:
             avg = tracker.average(sid, ap_key)
         label = ant_comb
-        print(format_result(rep_proxy, combined_est, avg, ap_label=label))
+        print(format_result(rep_proxy, combined_est, avg, ap_label=label,
+                            ref_dist=ref_dist))
         if csv_logger:
             csv_logger.log(rep_proxy, combined_est, avg, ap_label=label)
+        return True
 
     try:
         while True:
@@ -636,10 +663,15 @@ def main():
                 else:
                     avg = tracker.average(report.sid, report.ap)
 
-                print(format_result(report, est, avg))
+                print(format_result(report, est, avg, ref_dist=ref_dist))
 
                 if csv_logger:
                     csv_logger.log(report, est, avg)
+
+                if samples_remaining is not None:
+                    samples_remaining -= 1
+                    if samples_remaining <= 0:
+                        break
             else:
                 # Buffer per-AP results; AP 0 always starts a new group.
                 sid = report.sid
@@ -647,7 +679,10 @@ def main():
                     ap_buf[sid] = {}
                 if report.ap == 0 and ap_buf[sid]:
                     # AP 0 marks the start of a new round — flush previous.
-                    _flush_combined(sid)
+                    if _flush_combined(sid) and samples_remaining is not None:
+                        samples_remaining -= 1
+                        if samples_remaining <= 0:
+                            break
                     ap_buf[sid] = {}
                 ap_buf[sid][report.ap] = (report, est)
 
