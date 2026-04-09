@@ -153,29 +153,6 @@ Supported baudrates: 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600.
 
 ## Typical Usage
 
-### Initiator
-
-```
-ATS role=initiator
-OK
-AT+IQ on
-OK
-AT+SCAN 10
-OK
-+SCAN:EC3CC2C23110,-42,CS AT Command
-+SCANDONE
-AT+RANGE mac=EC3CC2C23110,int=500
-+RANGE:1
-OK
-+RANGE:1 CONNECTING
-+RANGE:1 ACTIVE
-+IQ:1,ap:0,rtt:1234,rn:3,ok,ffo:-12,m:fffffe7f3fffffffffff,q:00000000000000000000000000000000000000,il:[45,-102,78,...],ql:[...],ir:[...],qr:[...]
-+IQ:1,ap:0,rtt:1180,rn:3,ok,ffo:-12,m:fffffe7f3fffffffffff,q:00000000000000000000000000000000000000,il:[42,-98,80,...],ql:[...],ir:[...],qr:[...]
-...
-AT+RANGEX 1
-OK
-```
-
 ### Reflector
 
 ```
@@ -188,6 +165,43 @@ OK
 +CONNECTED
 +REFLECTOR READY
 ```
+
+### Initiator
+
+```
+ATS role=initiator
+OK
+AT+SCAN 5
+OK
++SCAN:EC3CC2C23110,-42,My Reflector
++SCANDONE
+AT+RANGE mac=EC3CC2C23110,int=1000
++RANGE:1
+OK
++RANGE:1 CONNECTING
++RANGE:1 ACTIVE
+AT+IQ on
+OK
++IQ:1,ap:0,rtt:1234,rn:3,ok,ffo:-12,m:fffffe7f3fffffffffff,q:00000000000000000000000000000000000000,il:[45,-102,78,...],ql:[...],ir:[...],qr:[...]
++IQ:1,ap:0,rtt:1180,rn:3,ok,ffo:-12,m:fffffe7f3fffffffffff,q:00000000000000000000000000000000000000,il:[42,-98,80,...],ql:[...],ir:[...],qr:[...]
+...
+AT+RANGEX 1
+OK
+```
+
+### Screenshots
+
+Set up initiator and reflector in two serial terminal windows.
+
+![Set up reflector and initiator](images/cs_at_command_setup.png)
+
+Raw IQ output on the initiator terminal (two BL54L15µ Channel Sounding DVKs with dual-antennas).
+
+![Raw IQ output on the initiator](images/cs_at_command_raw_iq.png)
+
+Distance estimation from cs_distance.py Python script with four antenna paths.
+
+![Distance estimation from Python script](images/cs_distance_script.png)
 
 ## Connection Interval Tuning
 
