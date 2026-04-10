@@ -236,6 +236,49 @@ See [distance_estimation/README.md](distance_estimation/README.md) for installat
 west build -b <board> -p
 ```
 
+## Frequently Asked Questions
+
+### From time to time I get a negative phase slope result in the output of cs_distance.py. Is that expected?
+
+Yes, negative phase slope distances can occur and are not unusual. Here's what's happening:
+
+In cs_distance.py:342, the distance is computed as:
+
+`distance = -SPEED_OF_LIGHT * slope / (4.0 * np.pi)`
+
+The leading minus sign accounts for the controller's PCT sign convention, where the CTF phase slope is normally negative for a positive (real) distance. A negative result means the fitted slope came out positive — the "wrong" direction. This can happen due to:
+
+- Phase unwrapping errors — np.unwrap can mistrack when tones are noisy or missing, flipping the apparent slope direction
+- Multipath interference — reflections can distort the phase-vs-frequency relationship
+- Low SNR / poor tone quality — especially if many tones are masked out (the function requires at least 10 valid tones at line 331, but even 10 can be marginal)
+
+The code already handles this gracefully — in cs_distance.py:391, negative estimates are excluded from the weighted combination:
+
+`if est is not None and est >= 0:`
+
+So negative phase slope values won't corrupt your combined distance. They're essentially a signal that the phase data for that particular measurement was too noisy to produce a reliable result. If you're seeing them frequently, it may point to a challenging RF environment or antenna configuration.
+
+### Why do I get larger (than slope) IFFT values with smaller oversampling (e.g. 1) than with the default of 16?
+
+`--oversample=16`:
+`[Session 1, AP 0 ok ]  RTT:  7.83m  IFFT:  3.39m  Slope:  3.23m  Combined:  3.77m  (avg:  4.30m)`
+
+`--oversample=1`:
+`[Session 1, AP 0 ok ]  RTT:  6.86m  IFFT:  5.26m  Slope:  3.35m  Combined:  4.66m  (avg:  4.66m)`
+
+This is expected behavior, and here's why: The issue is IFFT bin resolution.
+
+With `NUM_TONES=75` and `FREQ_SPACING=1` MHz:
+
+- oversample=1: n_fft=75. Each bin corresponds to c / (2 * n_fft * Δf) = 3e8 / (2 * 75 * 1e6) = 2.0m per bin. The peak can only land near integer bin positions. Parabolic interpolation helps but can only partially compensate for such a coarse grid. A real ~3.3m distance falls at bin index ~1.65, so the peak snaps toward bin 2 (~4.0m) and parabolic interpolation pulls it partway back, landing around ~5.2-5.5m — exactly what you see.
+- oversample=16: n_fft=1200. Each bin is 3e8 / (2 * 1200 * 1e6) = 0.125m. The peak can now land very close to the true distance. Parabolic interpolation on a 0.125m grid resolves sub-decimeter precision, giving you ~3.4m — consistent with the phase slope estimate.
+
+In short: at oversample=1, the distance quantization is ~2m per bin, which is far too coarse for the ~3.3m distances you're measuring. Parabolic interpolation helps but can't fully recover accuracy when the true peak falls between only 2-3 samples. The 16x oversampling provides a sufficiently fine grid that the peak location accurately reflects the true delay.
+
+The phase slope method is unaffected because it fits a line to the unwrapped phase vs. frequency — no FFT grid involved — so it gives the same answer regardless of the --oversample setting.
+
+The default of oversample=16 is a reasonable choice. You could potentially go lower (e.g., 4 or 8) and still get decent results, but oversample=1 is too coarse for accurate IFFT-based ranging at these distances.
+
 # License
 
 MIT License
