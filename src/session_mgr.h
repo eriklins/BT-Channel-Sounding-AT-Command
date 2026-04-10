@@ -31,6 +31,11 @@ int session_mgr_start(const bt_addr_le_t *addr, uint16_t interval_ms, uint8_t *s
 int session_mgr_stop(uint8_t session_id);
 
 /**
+ * Check if any ranging session is currently active.
+ */
+bool session_mgr_has_active(void);
+
+/**
  * Check if a connection belongs to a ranging session.
  */
 bool session_mgr_owns_conn(struct bt_conn *conn);

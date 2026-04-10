@@ -1067,6 +1067,16 @@ int session_mgr_stop(uint8_t session_id)
 	return 0;
 }
 
+bool session_mgr_has_active(void)
+{
+	for (int i = 0; i < SESSION_MGR_MAX_SESSIONS; i++) {
+		if (sessions[i].in_use) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool session_mgr_owns_conn(struct bt_conn *conn)
 {
 	return session_by_conn(conn) != NULL;

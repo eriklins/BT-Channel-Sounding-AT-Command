@@ -352,11 +352,12 @@ static void at_iq_handler(const char *args)
 		args++;
 	}
 
-	if (strcasecmp(args, "on") == 0) {
-		iq_output_set_enabled(true);
-		at_cmd_respond("OK");
-	} else if (strcasecmp(args, "off") == 0) {
-		iq_output_set_enabled(false);
+	if (strcasecmp(args, "on") == 0 || strcasecmp(args, "off") == 0) {
+		if (!session_mgr_has_active()) {
+			at_cmd_respond("ERROR");
+			return;
+		}
+		iq_output_set_enabled(strcasecmp(args, "on") == 0);
 		at_cmd_respond("OK");
 	} else if (*args == '?') {
 		at_cmd_respond(iq_output_is_enabled() ? "on" : "off");
