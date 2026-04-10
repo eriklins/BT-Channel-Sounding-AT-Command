@@ -229,6 +229,8 @@ def compute_ifft_distance(
     q_remote: np.ndarray,
     oversample: int = 16,
     tone_mask: np.ndarray | None = None,
+    mode: str = "highest",
+    threshold: float = 0.5,
 ) -> float | None:
     """Compute distance via IFFT of the Channel Transfer Function.
 
@@ -243,6 +245,11 @@ def compute_ifft_distance(
       4. Zero-pad and IFFT to get Channel Impulse Response
       5. Find peak with parabolic interpolation
       6. Convert peak index to distance
+
+    Peak selection modes:
+      - "highest": use the global maximum of the CIR (default)
+      - "earliest": use the first peak above *threshold* fraction of the
+        global maximum — better in NLOS / multipath environments
     """
     local_pct = i_local + 1j * q_local
     remote_pct = i_remote + 1j * q_remote
@@ -274,14 +281,38 @@ def compute_ifft_distance(
     cir = np.fft.ifft(ctf_padded)
     cir_mag = np.abs(cir)
 
-    # Find the global peak. Because the CTF phase has the opposite sign on
-    # real hardware, the peak corresponding to a positive distance can lie
-    # in either half of the IFFT output. Treat indices >= n_fft/2 as the
+    # Peak selection. Because the CTF phase has the opposite sign on real
+    # hardware, the peak corresponding to a positive distance can lie in
+    # either half of the IFFT output. Treat indices >= n_fft/2 as the
     # alias of a positive delay (n_fft - idx).
-    peak_idx = int(np.argmax(cir_mag))
+    half = n_fft // 2
+
+    if mode == "earliest":
+        # Find the earliest (shortest-distance) local peak above threshold.
+        # Only consider true local maxima so that parabolic interpolation
+        # receives a proper peak shape (not a slope).
+        thr_level = threshold * np.max(cir_mag)
+        is_peak = np.zeros(n_fft, dtype=bool)
+        is_peak[1:-1] = (
+            (cir_mag[1:-1] > cir_mag[:-2])
+            & (cir_mag[1:-1] > cir_mag[2:])
+        )
+        peaks = np.where(is_peak & (cir_mag >= thr_level))[0]
+        if len(peaks) == 0:
+            return None
+        # Map each peak index to its delay in bins.
+        delays = np.where(peaks >= half, n_fft - peaks, peaks)
+        # Pick the peak with the smallest positive delay.
+        positive = delays > 0
+        if not np.any(positive):
+            return None
+        best = np.argmin(np.where(positive, delays, n_fft))
+        peak_idx = int(peaks[best])
+    else:
+        peak_idx = int(np.argmax(cir_mag))
+
     refined_idx = _parabolic_interpolation(cir_mag, peak_idx)
 
-    half = n_fft // 2
     if refined_idx >= half:
         delay_bins = n_fft - refined_idx
     else:
@@ -368,6 +399,8 @@ def compute_distance(
     report: IQReport,
     oversample: int,
     weights: tuple[float, float, float],
+    ifft_mode: str = "highest",
+    ifft_thr: float = 0.5,
 ) -> DistanceEstimate:
     """Compute distance using all methods and produce a weighted combination."""
     rtt_m = compute_rtt_distance(report.rtt_half_ns, report.rtt_count)
@@ -375,6 +408,7 @@ def compute_distance(
     ifft_m = compute_ifft_distance(
         report.i_local, report.q_local, report.i_remote, report.q_remote,
         oversample, tone_mask=tone_mask,
+        mode=ifft_mode, threshold=ifft_thr,
     )
     slope_m = compute_phase_slope_distance(
         report.i_local, report.q_local, report.i_remote, report.q_remote,
@@ -512,6 +546,18 @@ def parse_args() -> argparse.Namespace:
         help="IFFT oversampling factor (default: 16)",
     )
     p.add_argument(
+        "--ifft-mode", type=str, default="highest",
+        choices=["highest", "earliest"],
+        help="IFFT peak selection mode (default: highest)",
+    )
+    p.add_argument(
+        "--ifft-thr", type=float, default=0.5, metavar="FLOAT",
+        help=(
+            "Threshold for earliest mode, as fraction of global peak 0.0-1.0 "
+            "(default: 0.5)"
+        ),
+    )
+    p.add_argument(
         "--avg-window", type=int, default=5,
         help="Moving average window size (default: 5)",
     )
@@ -554,12 +600,23 @@ def main():
             file=sys.stderr,
         )
         sys.exit(1)
+    ifft_mode = args.ifft_mode
+    ifft_thr = args.ifft_thr
+    if ifft_mode != "earliest" and "--ifft-thr" in sys.argv:
+        print(
+            "Error: --ifft-thr requires --ifft-mode earliest",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     ref_dist = args.ref_dist
     tracker = DistanceTracker(window_size=args.avg_window)
     csv_logger = CSVLogger(args.log, ref_dist=ref_dist) if args.log else None
 
     print(f"Connecting to {args.port} at {args.baud} baud...")
-    print(f"IFFT oversample: {args.oversample}x  |  Avg window: {args.avg_window}")
+    ifft_info = f"IFFT oversample: {args.oversample}x"
+    if ifft_mode == "earliest":
+        ifft_info += f" ({ifft_mode}, thr={ifft_thr:.2f})"
+    print(f"{ifft_info}  |  Avg window: {args.avg_window}")
     print(f"Weights - RTT: {weights[0]:.2f}  IFFT: {weights[1]:.2f}  Slope: {weights[2]:.2f}")
     if ref_dist is not None:
         print(f"Reference distance: {ref_dist:.2f} m")
@@ -654,7 +711,8 @@ def main():
             if report is None:
                 continue
 
-            est = compute_distance(report, args.oversample, weights)
+            est = compute_distance(report, args.oversample, weights,
+                                   ifft_mode=ifft_mode, ifft_thr=ifft_thr)
 
             if ant_comb is None:
                 # No combination — original per-AP behaviour.

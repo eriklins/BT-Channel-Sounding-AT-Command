@@ -31,6 +31,8 @@ First, configure the initiator via AT commands (set role, scan, start ranging). 
 | `port` | (required) | Serial port path (e.g. `/dev/ttyACM0`, `COM3`) |
 | `baud` | (required) | Baud rate (e.g. `115200`) |
 | `--oversample` | `16` | IFFT zero-padding oversampling factor |
+| `--ifft-mode MODE` | `highest` | IFFT peak selection: `highest` (strongest peak) or `earliest` (first peak above threshold) |
+| `--ifft-thr FLOAT` | `0.5` | Threshold for `earliest` mode, as fraction of global peak (0.0–1.0) |
 | `--avg-window` | `5` | Moving average window size |
 | `--weights RTT IFFT SLOPE` | `0.10 0.50 0.40` | Weights for combining the three estimation methods |
 | `--ref-dist METER` | off | Reference distance in meters; adds a `ref` column to terminal output and CSV |
@@ -58,6 +60,11 @@ python cs_distance.py /dev/ttyACM0 115200 --oversample 32 --avg-window 10
 Log with a known reference distance of 1.5 m (for accuracy evaluation):
 ```bash
 python cs_distance.py /dev/ttyACM0 115200 --ref-dist 1.5 --log measurements.csv
+```
+
+Earliest-arrival IFFT mode for multipath environments:
+```bash
+python cs_distance.py /dev/ttyACM0 115200 --ifft-mode earliest --ifft-thr 0.4
 ```
 
 Combine antenna paths by averaging:
@@ -104,7 +111,9 @@ The primary high-accuracy method. Uses the 75 tone Phase Correction Terms (PCTs)
 3. **Mask out tones the firmware reported as invalid or LOW/UNAVAILABLE quality** — see below
 4. Zero-pad to `75 * oversample` points for improved resolution
 5. IFFT to obtain Channel Impulse Response (CIR)
-6. Peak detection with parabolic interpolation for sub-bin accuracy
+6. Peak detection with parabolic interpolation for sub-bin accuracy:
+   - **highest** (default): global maximum of the CIR
+   - **earliest**: first peak above `--ifft-thr` fraction of the global maximum — better in NLOS / multipath environments where the direct path may not be the strongest
 7. Convert peak delay to distance: `d = c * tau / 2`
 
 The plain (non-conjugate) product implements the *sum* of the two PCT phases. Per the BT spec the local LO phases enter the two PCTs with opposite signs, so the sum cancels them and leaves `2*theta_propagation`. With 16x oversampling and parabolic interpolation, sub-decimeter accuracy is achievable in line-of-sight conditions.
