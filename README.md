@@ -2,6 +2,8 @@
 
 A Bluetooth LE Channel Sounding application for the nRF Connect SDK, controlled via AT commands over UART. The application supports both initiator and reflector roles and outputs raw IQ tone data from Channel Sounding procedures, suitable for external distance estimation on a connected host (e.g. a PC).
 
+![Channel Sounding GUI and AT Commands](images/cs_gui_and_at_command.png)
+
 Built on the Nordic nRF Connect SDK v3.2.4. Targets nRF54L15-based hardware (tested on Ezurio BL54L15 DVK).
 
 ## Commands
