@@ -4,7 +4,7 @@ A Bluetooth LE Channel Sounding application for the nRF Connect SDK, controlled 
 
 ![Channel Sounding GUI and AT Commands](images/cs_gui_and_at_command.png)
 
-Built on the Nordic nRF Connect SDK v3.2.4. Targets nRF54L15-based hardware (tested on Ezurio BL54L15 DVK).
+Built on the Nordic nRF Connect SDK v3.2.4. Targets nRF54L15-based hardware (tested on Ezurio BL54L15 DVK, BL54L15µ DVK and BL54L15µ Channel Sounding Kit with Dual-Antenna).
 
 ## Commands
 

@@ -214,8 +214,9 @@ class CSApp:
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        root.title("CS Distance GUI")
-        root.geometry("1500x850")
+        root.title("CS Distance GUI - (C) 2026 Erik Lins, MIT License")
+        root.geometry("1600x900")
+        root.minsize(1200,820)
 
         # session state
         self.result_queue: queue.Queue = queue.Queue()
@@ -236,9 +237,16 @@ class CSApp:
         self.last_avg_value: float | None = None
         self._last_redraw = 0.0
 
+        # Session filtering: firmware multiplexes concurrent ranging sessions
+        # as +IQ:<sid>,... — the GUI always displays one session at a time.
+        # The default session is chosen from the first +IQ record received
+        # after Start (sid 1 may already have been dropped by the firmware).
+        self.known_sessions: list[int] = []
+
         # Tk variables
         self.var_port = tk.StringVar()
         self.var_baud = tk.StringVar(value=str(DEFAULT_BAUD))
+        self.var_session = tk.StringVar(value="")
         self.var_w_rtt = tk.StringVar(value="0.10")
         self.var_w_ifft = tk.StringVar(value="0.50")
         self.var_w_slope = tk.StringVar(value="0.40")
@@ -303,8 +311,17 @@ class CSApp:
             values=[str(b) for b in BAUD_RATES], width=8, state="readonly",
         )
         self.cb_baud.pack(side="left", padx=(4, 12))
+        ttk.Label(top, text="Session:").pack(side="left")
+        self.cb_session = ttk.Combobox(
+            top, textvariable=self.var_session,
+            values=[], width=5, state="readonly",
+        )
+        self.cb_session.pack(side="left", padx=(4, 12))
+        self.cb_session.bind("<<ComboboxSelected>>", self._on_session_changed)
         self.btn_start = ttk.Button(top, text="Start", command=self._toggle_start)
-        self.btn_start.pack(side="left")
+        self.btn_start.pack(side="left", padx=(12, 0))
+        self.btn_clear = ttk.Button(top, text="Clear", command=self._clear_data)
+        self.btn_clear.pack(side="left", padx=(24, 0))
 
         main = ttk.Frame(root)
         main.pack(side="top", fill="both", expand=True)
@@ -475,7 +492,7 @@ class CSApp:
             self._weights_valid = False
         else:
             self.var_w_status.set(f"sum: {sum(w):.2f} OK")
-            self.lbl_weight_status.configure(foreground="dark green")
+            self.lbl_weight_status.configure(foreground="green")
             self._weights_valid = True
         self._update_start_state()
 
@@ -518,19 +535,38 @@ class CSApp:
         self.var_ifft_thr_nfl.set(v)
         self.lbl_thr_nfl.configure(text=f"{v:.1f} dB")
 
+    def _on_session_changed(self, _event=None):
+        # Switching sessions throws away the displayed history so the charts
+        # only reflect samples from the chosen session.
+        self._clear_data()
+
+    def _current_session(self) -> int | None:
+        try:
+            return int(self.var_session.get())
+        except (ValueError, tk.TclError):
+            return None
+
+    def _reset_sessions(self):
+        self.known_sessions = []
+        self.var_session.set("")
+        self.cb_session["values"] = []
+
     def _on_ant_comb_changed(self):
-        self._avg_session_buf.clear()
-        self.tracker = DistanceTracker(window_size=self.var_avg_window.get())
         if self.var_ant_comb.get() == "avg":
             self.known_aps = [self.AP_ALL]
         else:
             self.known_aps = [0]
+        self._clear_data()
+
+    def _clear_data(self):
+        self._avg_session_buf.clear()
+        self.tracker = DistanceTracker(window_size=self.var_avg_window.get())
         self.ts_buffers.clear()
         self.cir_data.clear()
         self.peak_distance.clear()
         self.sample_counters.clear()
         self.last_avg_value = None
-        self.lbl_avg.configure(text="Averaged: --- m")
+        self.lbl_avg.configure(text="Averaged Distance: --- m")
         self._rebuild_subplot_grid()
 
     def _get_settings(self):
@@ -577,6 +613,9 @@ class CSApp:
         if not self._weights_valid:
             messagebox.showerror("Weights", "Combined weights are invalid.")
             return
+
+        self._reset_sessions()
+        self._clear_data()
 
         self.stop_event = threading.Event()
         self.result_queue = queue.Queue()
@@ -630,6 +669,18 @@ class CSApp:
         report: IQReport = item["report"]
         est: DistanceEstimate = item["estimate"]
         cir = item["cir"]
+
+        if not self.known_sessions:
+            # First sample after Start — adopt its sid as the default.
+            self.known_sessions = [report.sid]
+            self.var_session.set(str(report.sid))
+            self.cb_session["values"] = [str(report.sid)]
+        elif report.sid not in self.known_sessions:
+            # New session observed — append in arrival order.
+            self.known_sessions.append(report.sid)
+            self.cb_session["values"] = [str(s) for s in self.known_sessions]
+        if report.sid != self._current_session():
+            return
 
         if self.var_ant_comb.get() == "avg":
             # AP 0 with a non-empty buffer marks the start of a new round —
