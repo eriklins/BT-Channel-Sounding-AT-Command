@@ -292,6 +292,16 @@ def compute_cir(
     return distances, folded
 
 
+def estimate_noise_floor(cir_mag: np.ndarray) -> float:
+    """Robust CIR noise-floor estimate (median of magnitude bins).
+
+    With 75 tones oversampled 16x into 1200 bins, the peak region spans only
+    a handful of bins; the median is dominated by the noise/sidelobe tail and
+    is robust against both the main peak and strong multipath reflections.
+    """
+    return float(np.median(cir_mag))
+
+
 def compute_ifft_distance(
     i_local: np.ndarray,
     q_local: np.ndarray,
@@ -300,7 +310,8 @@ def compute_ifft_distance(
     oversample: int = 16,
     tone_mask: np.ndarray | None = None,
     mode: str = "highest",
-    threshold: float = 0.5,
+    thr_mode: str = "rel",
+    thr_value: float = 0.5,
 ) -> float | None:
     """Compute distance via IFFT of the Channel Transfer Function.
 
@@ -318,8 +329,12 @@ def compute_ifft_distance(
 
     Peak selection modes:
       - "highest": use the global maximum of the CIR (default)
-      - "earliest": use the first peak above *threshold* fraction of the
-        global maximum — better in NLOS / multipath environments
+      - "earliest": use the first peak above a threshold — better in
+        NLOS / multipath environments where the direct path may be weaker
+        than a later reflection. The threshold is either a *fraction of the
+        global peak* (``thr_mode="rel"``, ``thr_value`` in 0..1) or a
+        *dB offset above the estimated noise floor*
+        (``thr_mode="nfl"``, ``thr_value`` in dB).
     """
     result = _compute_cir_raw(
         i_local, q_local, i_remote, q_remote, oversample, tone_mask,
@@ -338,7 +353,10 @@ def compute_ifft_distance(
         # Find the earliest (shortest-distance) local peak above threshold.
         # Only consider true local maxima so that parabolic interpolation
         # receives a proper peak shape (not a slope).
-        thr_level = threshold * np.max(cir_mag)
+        if thr_mode == "nfl":
+            thr_level = estimate_noise_floor(cir_mag) * 10.0 ** (thr_value / 20.0)
+        else:
+            thr_level = thr_value * np.max(cir_mag)
         is_peak = np.zeros(n_fft, dtype=bool)
         is_peak[1:-1] = (
             (cir_mag[1:-1] > cir_mag[:-2])
@@ -447,7 +465,8 @@ def compute_distance(
     oversample: int,
     weights: tuple[float, float, float],
     ifft_mode: str = "highest",
-    ifft_thr: float = 0.5,
+    ifft_thr_mode: str = "rel",
+    ifft_thr_value: float = 0.5,
 ) -> DistanceEstimate:
     """Compute distance using all methods and produce a weighted combination."""
     rtt_m = compute_rtt_distance(report.rtt_half_ns, report.rtt_count)
@@ -455,7 +474,7 @@ def compute_distance(
     ifft_m = compute_ifft_distance(
         report.i_local, report.q_local, report.i_remote, report.q_remote,
         oversample, tone_mask=tone_mask,
-        mode=ifft_mode, threshold=ifft_thr,
+        mode=ifft_mode, thr_mode=ifft_thr_mode, thr_value=ifft_thr_value,
     )
     slope_m = compute_phase_slope_distance(
         report.i_local, report.q_local, report.i_remote, report.q_remote,
@@ -597,11 +616,20 @@ def parse_args() -> argparse.Namespace:
         choices=["highest", "earliest"],
         help="IFFT peak selection mode (default: highest)",
     )
-    p.add_argument(
-        "--ifft-thr", type=float, default=0.5, metavar="FLOAT",
+    thr_group = p.add_mutually_exclusive_group()
+    thr_group.add_argument(
+        "--ifft-thr-rel", type=float, default=None, metavar="FLOAT",
         help=(
-            "Threshold for earliest mode, as fraction of global peak 0.0-1.0 "
-            "(default: 0.5)"
+            "Earliest-mode threshold as a fraction of the global CIR peak "
+            "(0.0-1.0, default: 0.5). Mutually exclusive with --ifft-thr-nfl."
+        ),
+    )
+    thr_group.add_argument(
+        "--ifft-thr-nfl", type=float, default=None, metavar="DB",
+        help=(
+            "Earliest-mode threshold in dB above the estimated CIR noise "
+            "floor (e.g. 10 ~= 3.16x noise floor). Mutually exclusive with "
+            "--ifft-thr-rel."
         ),
     )
     p.add_argument(
@@ -648,10 +676,20 @@ def main():
         )
         sys.exit(1)
     ifft_mode = args.ifft_mode
-    ifft_thr = args.ifft_thr
-    if ifft_mode != "earliest" and "--ifft-thr" in sys.argv:
+    if args.ifft_thr_nfl is not None:
+        ifft_thr_mode = "nfl"
+        ifft_thr_value = args.ifft_thr_nfl
+    elif args.ifft_thr_rel is not None:
+        ifft_thr_mode = "rel"
+        ifft_thr_value = args.ifft_thr_rel
+    else:
+        ifft_thr_mode = "rel"
+        ifft_thr_value = 0.5
+    if ifft_mode != "earliest" and (
+        args.ifft_thr_rel is not None or args.ifft_thr_nfl is not None
+    ):
         print(
-            "Error: --ifft-thr requires --ifft-mode earliest",
+            "Error: --ifft-thr-rel / --ifft-thr-nfl require --ifft-mode earliest",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -662,7 +700,11 @@ def main():
     print(f"Connecting to {args.port} at {args.baud} baud...")
     ifft_info = f"IFFT oversample: {args.oversample}x"
     if ifft_mode == "earliest":
-        ifft_info += f" ({ifft_mode}, thr={ifft_thr:.2f})"
+        if ifft_thr_mode == "nfl":
+            thr_str = f"thr_nfl={ifft_thr_value:.1f}dB"
+        else:
+            thr_str = f"thr_rel={ifft_thr_value:.2f}"
+        ifft_info += f" ({ifft_mode}, {thr_str})"
     print(f"{ifft_info}  |  Avg window: {args.avg_window}")
     print(f"Weights - RTT: {weights[0]:.2f}  IFFT: {weights[1]:.2f}  Slope: {weights[2]:.2f}")
     if ref_dist is not None:
@@ -764,8 +806,12 @@ def main():
             if report is None:
                 continue
 
-            est = compute_distance(report, args.oversample, weights,
-                                   ifft_mode=ifft_mode, ifft_thr=ifft_thr)
+            est = compute_distance(
+                report, args.oversample, weights,
+                ifft_mode=ifft_mode,
+                ifft_thr_mode=ifft_thr_mode,
+                ifft_thr_value=ifft_thr_value,
+            )
 
             if ant_comb is None:
                 # No combination — original per-AP behaviour.

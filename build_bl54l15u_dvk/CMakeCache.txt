@@ -32,9 +32,6 @@ BOARD_DIR:PATH=/opt/nordic/ncs/v3.2.4/zephyr/boards/ezurio/bl54l15u_dvk
 //Support board extensions
 BOARD_EXTENSIONS:BOOL=ON
 
-//No help, variable specified on the command line.
-BT-Channel-Sounding-AT-Command_DEBUG_THREAD_INFO:UNINITIALIZED=On
-
 //Selected board
 CACHED_BOARD:STRING=bl54l15u_dvk/nrf54l15/cpuapp
 
@@ -45,7 +42,7 @@ CACHED_SHIELD:STRING=
 CACHED_SNIPPET:STRING=
 
 //Enable/Disable output of compile commands during generation.
-CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=ON
+CMAKE_EXPORT_COMPILE_COMMANDS:BOOL=
 
 //Path to a program.
 CMAKE_INSTALL_NAME_TOOL:FILEPATH=/usr/bin/install_name_tool
@@ -109,6 +106,9 @@ ZEPHYR_RUNNER_CONFIG_KERNEL_HEX:STRING=
 
 //The directory containing a CMake configuration file for Zephyr.
 Zephyr_DIR:PATH=/opt/nordic/ncs/v3.2.4/zephyr/share/zephyr-package/cmake
+
+//No help, variable specified on the command line.
+cs_at_command_DEBUG_THREAD_INFO:UNINITIALIZED=On
 
 //Value Computed by CMake
 sysbuild_BINARY_DIR:STATIC=/Users/erik/develop/gitlocal/BT-Channel-Sounding-AT-Command/build_bl54l15u_dvk/_sysbuild

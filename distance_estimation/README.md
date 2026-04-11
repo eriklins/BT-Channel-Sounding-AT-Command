@@ -32,7 +32,8 @@ First, configure the initiator via AT commands (set role, scan, start ranging). 
 | `baud` | (required) | Baud rate (e.g. `115200`) |
 | `--oversample` | `16` | IFFT zero-padding oversampling factor |
 | `--ifft-mode MODE` | `highest` | IFFT peak selection: `highest` (strongest peak) or `earliest` (first peak above threshold) |
-| `--ifft-thr FLOAT` | `0.5` | Threshold for `earliest` mode, as fraction of global peak (0.0–1.0) |
+| `--ifft-thr-rel FLOAT` | `0.5` | Earliest-mode threshold as a fraction of the global CIR peak (0.0–1.0). Mutually exclusive with `--ifft-thr-nfl`. |
+| `--ifft-thr-nfl DB` | — | Earliest-mode threshold in dB above the estimated CIR noise floor (e.g. 10 ≈ 3.16× noise floor). Mutually exclusive with `--ifft-thr-rel`. |
 | `--avg-window` | `5` | Moving average window size |
 | `--weights RTT IFFT SLOPE` | `0.10 0.50 0.40` | Weights for combining the three estimation methods |
 | `--ref-dist METER` | off | Reference distance in meters; adds a `ref` column to terminal output and CSV |
@@ -62,9 +63,14 @@ Log with a known reference distance of 1.5 m (for accuracy evaluation):
 python cs_distance.py /dev/ttyACM0 115200 --ref-dist 1.5 --log measurements.csv
 ```
 
-Earliest-arrival IFFT mode for multipath environments:
+Earliest-arrival IFFT mode for multipath environments (relative threshold, 40% of global peak):
 ```bash
-python cs_distance.py /dev/ttyACM0 115200 --ifft-mode earliest --ifft-thr 0.4
+python cs_distance.py /dev/ttyACM0 115200 --ifft-mode earliest --ifft-thr-rel 0.4
+```
+
+Earliest-arrival with a noise-floor-relative threshold (10 dB ≈ 3.16× noise floor) — more robust in strong NLOS where the direct path may sit far below the dominant reflection:
+```bash
+python cs_distance.py /dev/ttyACM0 115200 --ifft-mode earliest --ifft-thr-nfl 10
 ```
 
 Combine antenna paths by averaging:
@@ -98,7 +104,7 @@ Weights - RTT: 0.10  IFFT: 0.50  Slope: 0.40
 .venv/bin/python cs_gui.py
 ```
 
-Pick a port (the list is filtered to `*usbmodem*`) and baud, then click **Start** — the GUI sends `AT+IQ on` automatically and `AT+IQ off` on stop. Combined weights, averaging window, IFFT mode (highest / earliest with threshold slider) and antenna-path combination can be changed live without restarting the session. When antenna paths are set to *None*, each AP gets its own row of charts; *Average* collapses them into a single combined row.
+Pick a port (the list is filtered to `*usbmodem*`) and baud, then click **Start** — the GUI sends `AT+IQ on` automatically and `AT+IQ off` on stop. Combined weights, averaging window, IFFT mode and antenna-path combination can be changed live without restarting the session. For the earliest-peak IFFT mode, the threshold can be set either as a fraction of the global CIR peak (**Relative**) or in dB above the estimated noise floor (**Above noise floor**); each mode has its own slider so values are preserved when switching back and forth. When antenna paths are set to *None*, each AP gets its own row of charts; *Average* collapses them into a single combined row.
 
 ## Algorithm Overview
 
@@ -123,7 +129,9 @@ The primary high-accuracy method. Uses the 75 tone Phase Correction Terms (PCTs)
 5. IFFT to obtain Channel Impulse Response (CIR)
 6. Peak detection with parabolic interpolation for sub-bin accuracy:
    - **highest** (default): global maximum of the CIR
-   - **earliest**: first peak above `--ifft-thr` fraction of the global maximum — better in NLOS / multipath environments where the direct path may not be the strongest
+   - **earliest**: first local maximum above a threshold — better in NLOS / multipath environments where the direct path may not be the strongest. Two threshold flavours are available:
+     - `--ifft-thr-rel` expresses the threshold as a fraction of the global CIR peak. Simple and robust for moderate multipath, but can skip the LOS tap when a reflection is much stronger than it.
+     - `--ifft-thr-nfl` expresses the threshold in dB above an estimated CIR noise floor (median of the magnitude bins — robust against both the peak region and strong reflections). Better in strong NLOS, since it answers "is this tap distinguishable from noise?" instead of "is this tap comparable to the strongest?".
 7. Convert peak delay to distance: `d = c * tau / 2`
 
 The plain (non-conjugate) product implements the *sum* of the two PCT phases. Per the BT spec the local LO phases enter the two PCTs with opposite signs, so the sum cancels them and leaves `2*theta_propagation`. With 16x oversampling and parabolic interpolation, sub-decimeter accuracy is achievable in line-of-sight conditions.

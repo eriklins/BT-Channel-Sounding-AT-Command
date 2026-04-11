@@ -43,6 +43,7 @@ from cs_distance import (
     combine_antenna_paths,
     compute_cir,
     compute_distance,
+    estimate_noise_floor,
     parse_iq_line,
 )
 
@@ -178,7 +179,8 @@ class SerialWorker(threading.Thread):
                     oversample=s["oversample"],
                     weights=s["weights"],
                     ifft_mode=s["ifft_mode"],
-                    ifft_thr=s["ifft_thr"],
+                    ifft_thr_mode=s["ifft_thr_mode"],
+                    ifft_thr_value=s["ifft_thr_value"],
                 )
                 cir = compute_cir(report, oversample=s["oversample"])
                 self._q.put({
@@ -243,7 +245,9 @@ class CSApp:
         self.var_w_status = tk.StringVar(value="sum: 1.00 OK")
         self.var_avg_window = tk.IntVar(value=5)
         self.var_ifft_mode = tk.StringVar(value="highest")
-        self.var_ifft_thr = tk.DoubleVar(value=0.5)
+        self.var_thr_mode = tk.StringVar(value="rel")
+        self.var_ifft_thr_rel = tk.DoubleVar(value=0.5)
+        self.var_ifft_thr_nfl = tk.DoubleVar(value=10.0)
         self.var_ant_comb = tk.StringVar(value="none")
         self._weights_valid = True
 
@@ -320,6 +324,7 @@ class CSApp:
         self.line_cir: dict = {}
         self.line_peak: dict = {}
         self.line_thr: dict = {}
+        self.line_nfl: dict = {}
 
         self.lbl_avg = ttk.Label(
             chart_col, text="Averaged Distance: --- m",
@@ -376,17 +381,45 @@ class CSApp:
             ifft_frame, text="Earliest peak", value="earliest",
             variable=self.var_ifft_mode, command=self._on_ifft_mode,
         ).pack(anchor="w")
-        thr_row = ttk.Frame(ifft_frame)
-        thr_row.pack(fill="x", pady=(4, 0))
-        ttk.Label(thr_row, text="Threshold:").pack(side="left")
-        self.lbl_thr = ttk.Label(thr_row, text=f"{self.var_ifft_thr.get():.2f}")
-        self.lbl_thr.pack(side="right")
-        self.scale_thr = ttk.Scale(
-            ifft_frame, from_=0.05, to=0.95, orient="horizontal",
-            command=self._on_thr_changed,
+
+        # Threshold mode selection (only meaningful for earliest peak).
+        self.rb_thr_rel = ttk.Radiobutton(
+            ifft_frame, text="Relative", value="rel",
+            variable=self.var_thr_mode, command=self._on_thr_mode_changed,
         )
-        self.scale_thr.set(self.var_ifft_thr.get())
-        self.scale_thr.pack(fill="x")
+        self.rb_thr_rel.pack(anchor="w", pady=(6, 0))
+        rel_row = ttk.Frame(ifft_frame)
+        rel_row.pack(fill="x")
+        ttk.Label(rel_row, text="Threshold:").pack(side="left")
+        self.lbl_thr_rel = ttk.Label(
+            rel_row, text=f"{self.var_ifft_thr_rel.get():.2f}",
+        )
+        self.lbl_thr_rel.pack(side="right")
+        self.scale_thr_rel = ttk.Scale(
+            ifft_frame, from_=0.05, to=0.95, orient="horizontal",
+            command=self._on_thr_rel_changed,
+        )
+        self.scale_thr_rel.set(self.var_ifft_thr_rel.get())
+        self.scale_thr_rel.pack(fill="x")
+
+        self.rb_thr_nfl = ttk.Radiobutton(
+            ifft_frame, text="Above noise floor", value="nfl",
+            variable=self.var_thr_mode, command=self._on_thr_mode_changed,
+        )
+        self.rb_thr_nfl.pack(anchor="w", pady=(4, 0))
+        nfl_row = ttk.Frame(ifft_frame)
+        nfl_row.pack(fill="x")
+        ttk.Label(nfl_row, text="Threshold:").pack(side="left")
+        self.lbl_thr_nfl = ttk.Label(
+            nfl_row, text=f"{self.var_ifft_thr_nfl.get():.1f} dB",
+        )
+        self.lbl_thr_nfl.pack(side="right")
+        self.scale_thr_nfl = ttk.Scale(
+            ifft_frame, from_=3.0, to=30.0, orient="horizontal",
+            command=self._on_thr_nfl_changed,
+        )
+        self.scale_thr_nfl.set(self.var_ifft_thr_nfl.get())
+        self.scale_thr_nfl.pack(fill="x")
         self._on_ifft_mode()
 
         # ---- antenna paths ----
@@ -462,13 +495,28 @@ class CSApp:
             buf["avg"].clear()
 
     def _on_ifft_mode(self):
-        state = "normal" if self.var_ifft_mode.get() == "earliest" else "disabled"
-        self.scale_thr.configure(state=state)
+        earliest = self.var_ifft_mode.get() == "earliest"
+        rb_state = "normal" if earliest else "disabled"
+        self.rb_thr_rel.configure(state=rb_state)
+        self.rb_thr_nfl.configure(state=rb_state)
+        self._on_thr_mode_changed()
 
-    def _on_thr_changed(self, value):
+    def _on_thr_mode_changed(self):
+        earliest = self.var_ifft_mode.get() == "earliest"
+        rel_active = earliest and self.var_thr_mode.get() == "rel"
+        nfl_active = earliest and self.var_thr_mode.get() == "nfl"
+        self.scale_thr_rel.configure(state="normal" if rel_active else "disabled")
+        self.scale_thr_nfl.configure(state="normal" if nfl_active else "disabled")
+
+    def _on_thr_rel_changed(self, value):
         v = float(value)
-        self.var_ifft_thr.set(v)
-        self.lbl_thr.configure(text=f"{v:.2f}")
+        self.var_ifft_thr_rel.set(v)
+        self.lbl_thr_rel.configure(text=f"{v:.2f}")
+
+    def _on_thr_nfl_changed(self, value):
+        v = float(value)
+        self.var_ifft_thr_nfl.set(v)
+        self.lbl_thr_nfl.configure(text=f"{v:.1f} dB")
 
     def _on_ant_comb_changed(self):
         self._avg_session_buf.clear()
@@ -494,11 +542,17 @@ class CSApp:
             )
         except ValueError:
             weights = (0.10, 0.50, 0.40)
+        thr_mode = self.var_thr_mode.get()
+        if thr_mode == "nfl":
+            thr_value = float(self.var_ifft_thr_nfl.get())
+        else:
+            thr_value = float(self.var_ifft_thr_rel.get())
         return {
             "oversample": DEFAULT_OVERSAMPLE,
             "weights": weights,
             "ifft_mode": self.var_ifft_mode.get(),
-            "ifft_thr": float(self.var_ifft_thr.get()),
+            "ifft_thr_mode": thr_mode,
+            "ifft_thr_value": thr_value,
             "ant_comb": self.var_ant_comb.get(),
         }
 
@@ -662,6 +716,7 @@ class CSApp:
         self.line_cir.clear()
         self.line_peak.clear()
         self.line_thr.clear()
+        self.line_nfl.clear()
 
         aps = self.known_aps if self.known_aps else [0]
         n = len(aps)
@@ -700,12 +755,17 @@ class CSApp:
                 [], [], color=self.theme["thr"], linewidth=1.0,
                 linestyle="--", label="threshold",
             )
+            (nfl,) = ax_cir.plot(
+                [], [], color=self.theme["thr"], linewidth=1.0,
+                linestyle=":", label="noise floor",
+            )
             ax_cir.legend(loc="upper right", fontsize=8)
             self._style_axes(ax_cir)
             self.axes_cir[ap] = ax_cir
             self.line_cir[ap] = cl
             self.line_peak[ap] = pk
             self.line_thr[ap] = thr
+            self.line_nfl[ap] = nfl
 
         self.fig.tight_layout()
         self.canvas.draw_idle()
@@ -761,12 +821,22 @@ class CSApp:
                 self.line_peak[ap].set_data([], [])
 
             if self.var_ifft_mode.get() == "earliest" and mag.size:
-                thr_level = float(self.var_ifft_thr.get()) * float(mag.max())
+                if self.var_thr_mode.get() == "nfl":
+                    nfl_level = estimate_noise_floor(mag)
+                    thr_db = float(self.var_ifft_thr_nfl.get())
+                    thr_level = nfl_level * 10.0 ** (thr_db / 20.0)
+                    self.line_nfl[ap].set_data(
+                        [0, MAX_PLOT_DISTANCE_M], [nfl_level, nfl_level],
+                    )
+                else:
+                    thr_level = float(self.var_ifft_thr_rel.get()) * float(mag.max())
+                    self.line_nfl[ap].set_data([], [])
                 self.line_thr[ap].set_data(
                     [0, MAX_PLOT_DISTANCE_M], [thr_level, thr_level],
                 )
             else:
                 self.line_thr[ap].set_data([], [])
+                self.line_nfl[ap].set_data([], [])
 
         self.canvas.draw_idle()
 
