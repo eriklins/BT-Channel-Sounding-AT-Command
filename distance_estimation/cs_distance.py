@@ -683,6 +683,12 @@ def main():
         print(f"Error opening serial port: {e}", file=sys.stderr)
         sys.exit(1)
 
+    # Let the USB CDC line coding settle before writing. On macOS, baud
+    # rates above 230400 go through IOSSIOSPEED and the first write can
+    # race the VCOM baud switch, garbling bytes.
+    time.sleep(0.2)
+    ser.reset_input_buffer()
+
     # Enable IQ output on the device
     print("Enabling IQ output... ", end="", flush=True)
     ser.write(b"AT+IQ on\r\n")

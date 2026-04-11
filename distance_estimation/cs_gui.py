@@ -120,6 +120,11 @@ class SerialWorker(threading.Thread):
                 self._q.put({"type": "error", "msg": f"Open failed: {exc}"})
                 return
 
+            # Let the USB CDC line coding settle before writing. On macOS,
+            # baud rates above 230400 go through IOSSIOSPEED and the first
+            # write can race the VCOM baud switch, garbling bytes.
+            time.sleep(0.2)
+
             try:
                 ser.reset_input_buffer()
                 ser.write(b"AT+IQ on\r\n")
@@ -251,6 +256,17 @@ class CSApp:
         self._rebuild_subplot_grid()
         self._poll_queue()
 
+        root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _on_close(self):
+        # Give the worker a chance to send "AT+IQ off" before the daemon
+        # thread is killed on interpreter shutdown.
+        worker = self.worker
+        if worker is not None and worker.is_alive():
+            self.stop_event.set()
+            worker.join(timeout=3.0)
+        self.root.destroy()
+
     # --------------------------------------------------------------- theme
 
     def _detect_theme(self):
@@ -312,8 +328,11 @@ class CSApp:
         )
         self.lbl_avg.pack(side="bottom", fill="x", padx=8, pady=(4, 8))
 
+        s = ttk.Style()
+        s.configure('Settings.TLabelframe.Label', font=('arial', 11, 'bold'))
+
         # ---- weights ----
-        weights_frame = ttk.LabelFrame(side, text="Combined weights", padding=8)
+        weights_frame = ttk.LabelFrame(side, text="Combined Weights", style="Settings.TLabelframe", padding=8)
         weights_frame.pack(fill="x", pady=(0, 8))
         for label, var in (
             ("RTT", self.var_w_rtt),
@@ -333,7 +352,7 @@ class CSApp:
         self.lbl_weight_status.pack(anchor="w", pady=(4, 0))
 
         # ---- averaging window ----
-        avg_frame = ttk.LabelFrame(side, text="Averaging window", padding=8)
+        avg_frame = ttk.LabelFrame(side, text="Averaging Window", style="Settings.TLabelframe", padding=8)
         avg_frame.pack(fill="x", pady=(0, 8))
         self.lbl_avg_window = ttk.Label(
             avg_frame, text=f"{self.var_avg_window.get()} samples",
@@ -347,7 +366,7 @@ class CSApp:
         self.scale_avg.pack(fill="x")
 
         # ---- IFFT mode ----
-        ifft_frame = ttk.LabelFrame(side, text="IFFT mode", padding=8)
+        ifft_frame = ttk.LabelFrame(side, text="IFFT Mode", style="Settings.TLabelframe", padding=8)
         ifft_frame.pack(fill="x", pady=(0, 8))
         ttk.Radiobutton(
             ifft_frame, text="Highest peak", value="highest",
@@ -371,7 +390,7 @@ class CSApp:
         self._on_ifft_mode()
 
         # ---- antenna paths ----
-        ant_frame = ttk.LabelFrame(side, text="Antenna paths", padding=8)
+        ant_frame = ttk.LabelFrame(side, text="Antenna Paths", style="Settings.TLabelframe", padding=8)
         ant_frame.pack(fill="x", pady=(0, 8))
         ttk.Radiobutton(
             ant_frame, text="None (per-AP)", value="none",
@@ -657,7 +676,8 @@ class CSApp:
             ax_ts.grid(True, alpha=0.3)
             line_dict = {}
             for key, lbl, color in self.metric_labels:
-                (ln,) = ax_ts.plot([], [], label=lbl, color=color, linewidth=1.4)
+                lw = 2.8 if key == "avg" else 1.4
+                (ln,) = ax_ts.plot([], [], label=lbl, color=color, linewidth=lw)
                 line_dict[key] = ln
             ax_ts.legend(loc="upper right", fontsize=8)
             self._style_axes(ax_ts)
