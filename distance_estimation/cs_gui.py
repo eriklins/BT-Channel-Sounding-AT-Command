@@ -52,7 +52,8 @@ PORT_GLOB = "*usbmodem*"
 BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
 DEFAULT_BAUD = 115200
 DEFAULT_OVERSAMPLE = 16
-TIME_SERIES_MAX = 300
+TIME_SERIES_WINDOW_S = 90.0
+TIME_SERIES_WINDOW_CHOICES = (30, 60, 90, 120)
 REDRAW_INTERVAL_S = 0.1   # cap chart redraws at ~10 Hz
 QUEUE_POLL_MS = 50
 MAX_PLOT_DISTANCE_M = 30.0
@@ -228,7 +229,8 @@ class CSApp:
         self.tracker = DistanceTracker(window_size=5)
         self._avg_session_buf: dict[int, DistanceEstimate] = {}
         self.known_aps: list[int] = [0]
-        self.sample_counters: dict[int, int] = {}
+        self._ts_start: float | None = None
+        self.var_ts_window_s = tk.IntVar(value=int(TIME_SERIES_WINDOW_S))
 
         # plot data
         self.ts_buffers: dict[int, dict[str, deque]] = {}
@@ -335,6 +337,10 @@ class CSApp:
         )
         self.canvas = FigureCanvasTkAgg(self.fig, master=chart_col)
         self.canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+        tk_canvas = self.canvas.get_tk_widget()
+        tk_canvas.bind("<ButtonPress-2>", self._on_chart_right_click)
+        tk_canvas.bind("<ButtonPress-3>", self._on_chart_right_click)
+        tk_canvas.bind("<Control-ButtonPress-1>", self._on_chart_right_click)
         self.axes_ts: dict = {}
         self.axes_cir: dict = {}
         self.lines_ts: dict = {}
@@ -564,7 +570,7 @@ class CSApp:
         self.ts_buffers.clear()
         self.cir_data.clear()
         self.peak_distance.clear()
-        self.sample_counters.clear()
+        self._ts_start = None
         self.last_avg_value = None
         self.lbl_avg.configure(text="Averaged Distance: --- m")
         self._rebuild_subplot_grid()
@@ -703,6 +709,47 @@ class CSApp:
         # ant_comb == "none": one row per antenna path
         self._record_sample(report.ap, est, cir)
 
+    def _on_chart_right_click(self, event):
+        tk_widget = self.canvas.get_tk_widget()
+        height = tk_widget.winfo_height()
+        mpl_x = float(event.x)
+        mpl_y = float(height - event.y)
+        on_ts_area = False
+        for ax in self.axes_ts.values():
+            bbox = ax.get_window_extent()
+            if bbox.x0 <= mpl_x <= bbox.x1:
+                if bbox.y0 - 50 <= mpl_y <= bbox.y1:
+                    on_ts_area = True
+                    break
+        if not on_ts_area:
+            return
+        menu = tk.Menu(self.root, tearoff=0)
+        current = self.var_ts_window_s.get()
+        for secs in TIME_SERIES_WINDOW_CHOICES:
+            label = f"{secs} s" + ("  \u2713" if secs == current else "")
+            menu.add_command(
+                label=label,
+                command=lambda s=secs: self._set_ts_window(s),
+            )
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _set_ts_window(self, seconds: int):
+        self.var_ts_window_s.set(int(seconds))
+        cutoff_window = float(seconds)
+        for buffers in self.ts_buffers.values():
+            for buf in buffers.values():
+                if not buf:
+                    continue
+                newest_t = buf[-1][0]
+                cutoff = newest_t - cutoff_window
+                while buf and buf[0][0] < cutoff:
+                    buf.popleft()
+        self._last_redraw = 0.0
+        self._maybe_redraw()
+
     def _record_sample(self, ap, est, cir):
         if ap not in self.known_aps:
             self.known_aps = sorted(set(self.known_aps + [ap]))
@@ -720,10 +767,12 @@ class CSApp:
         else:
             avg_value = None
 
-        idx = self.sample_counters.get(ap, 0)
-        self.sample_counters[ap] = idx + 1
+        now = time.monotonic()
+        if self._ts_start is None:
+            self._ts_start = now
+        t = now - self._ts_start
         buffers = self.ts_buffers.setdefault(ap, {
-            key: deque(maxlen=TIME_SERIES_MAX) for key, _, _ in self.metric_labels
+            key: deque() for key, _, _ in self.metric_labels
         })
         values = {
             "rtt": est.rtt_m,
@@ -732,8 +781,12 @@ class CSApp:
             "combined": est.combined_m,
             "avg": avg_value,
         }
+        cutoff = t - float(self.var_ts_window_s.get())
         for key, val in values.items():
-            buffers[key].append((idx, val))
+            buf = buffers[key]
+            buf.append((t, val))
+            while buf and buf[0][0] < cutoff:
+                buf.popleft()
 
         if cir is not None:
             self.cir_data[ap] = cir
@@ -777,7 +830,7 @@ class CSApp:
             label = "combined" if ap == self.AP_ALL else f"AP {ap}"
 
             ax_ts.set_title(f"Distance estimates ({label})")
-            ax_ts.set_xlabel("sample")
+            ax_ts.set_xlabel("time (s)")
             ax_ts.set_ylabel("Distance (m)")
             ax_ts.grid(True, alpha=0.3)
             line_dict = {}
@@ -835,6 +888,7 @@ class CSApp:
                 continue
             ax = self.axes_ts[ap]
             ymin, ymax = float("inf"), float("-inf")
+            xmin, xmax = float("inf"), float("-inf")
             for key, _, _ in self.metric_labels:
                 pts = [(i, v) for i, v in buffers[key] if v is not None]
                 if pts:
@@ -842,11 +896,14 @@ class CSApp:
                     self.lines_ts[ap][key].set_data(xs, ys)
                     ymin = min(ymin, min(ys))
                     ymax = max(ymax, max(ys))
+                    xmin = min(xmin, xs[0])
+                    xmax = max(xmax, xs[-1])
                 else:
                     self.lines_ts[ap][key].set_data([], [])
-            counter = self.sample_counters.get(ap, 0)
-            x0 = max(0, counter - TIME_SERIES_MAX)
-            ax.set_xlim(x0, max(counter, x0 + 10))
+            if xmin < xmax:
+                ax.set_xlim(xmin, max(xmax, xmin + 1.0))
+            else:
+                ax.set_xlim(0, 1.0)
             if ymin < ymax:
                 margin = max(0.5, 0.1 * (ymax - ymin))
                 ax.set_ylim(
