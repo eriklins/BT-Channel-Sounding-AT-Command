@@ -222,6 +222,76 @@ def _parabolic_interpolation(magnitudes: np.ndarray, peak_idx: int) -> float:
     return peak_idx + correction
 
 
+def _compute_cir_raw(
+    i_local: np.ndarray,
+    q_local: np.ndarray,
+    i_remote: np.ndarray,
+    q_remote: np.ndarray,
+    oversample: int = 16,
+    tone_mask: np.ndarray | None = None,
+) -> tuple[np.ndarray, int] | None:
+    """Form the CTF and compute its IFFT, returning (cir_mag, n_fft).
+
+    Shared by compute_ifft_distance() (peak picking) and compute_cir()
+    (visualization). Returns None if the CTF is all-zero.
+    """
+    local_pct = i_local + 1j * q_local
+    remote_pct = i_remote + 1j * q_remote
+
+    # Channel Transfer Function: H(k) = local(k) * remote(k).
+    # The sum of the two PCT phases (= 2*theta_propagation) cancels the LO
+    # offset. Empirically the controller's PCT sign convention is such that
+    # the resulting CTF phase *decreases* with frequency, so the IFFT peak
+    # lands in the *upper* half of the result (alias of a positive delay).
+    ctf = local_pct * remote_pct
+
+    # Mask out tones the device flagged as invalid / unmeasured. Without this,
+    # CS channels excluded from the channel map (e.g. the BLE primary
+    # advertising channels) appear as hard zeros and distort the IFFT peak.
+    if tone_mask is not None:
+        ctf = ctf * tone_mask.astype(ctf.dtype)
+
+    if np.all(np.abs(ctf) < 1e-12):
+        return None
+
+    n_fft = NUM_TONES * oversample
+    ctf_padded = np.zeros(n_fft, dtype=complex)
+    ctf_padded[:NUM_TONES] = ctf
+
+    cir = np.fft.ifft(ctf_padded)
+    return np.abs(cir), n_fft
+
+
+def compute_cir(
+    report: "IQReport",
+    oversample: int = 16,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Return (distances_m, cir_mag) suitable for plotting CIR vs distance.
+
+    Folds the upper half of the IFFT (which aliases to positive delays under
+    this PCT sign convention) onto the lower half via element-wise max so the
+    output is a single magnitude curve indexed by physical distance.
+    """
+    tone_mask = _build_tone_mask(report)
+    result = _compute_cir_raw(
+        report.i_local, report.q_local, report.i_remote, report.q_remote,
+        oversample, tone_mask,
+    )
+    if result is None:
+        return None
+    cir_mag, n_fft = result
+
+    half = n_fft // 2
+    distances = SPEED_OF_LIGHT * np.arange(half + 1) / (2.0 * n_fft * FREQ_SPACING_HZ)
+    lower = cir_mag[:half + 1]
+    upper_folded = np.empty(half + 1, dtype=cir_mag.dtype)
+    upper_folded[0] = cir_mag[0]
+    # Upper-half indices [n_fft-1, n_fft-2, ..., half] alias to delays [1..half]
+    upper_folded[1:] = cir_mag[n_fft - 1:half - 1:-1]
+    folded = np.maximum(lower, upper_folded)
+    return distances, folded
+
+
 def compute_ifft_distance(
     i_local: np.ndarray,
     q_local: np.ndarray,
@@ -251,35 +321,12 @@ def compute_ifft_distance(
       - "earliest": use the first peak above *threshold* fraction of the
         global maximum — better in NLOS / multipath environments
     """
-    local_pct = i_local + 1j * q_local
-    remote_pct = i_remote + 1j * q_remote
-
-    # Channel Transfer Function: H(k) = local(k) * remote(k).
-    # The sum of the two PCT phases (= 2*theta_propagation) cancels the LO
-    # offset. Empirically the controller's PCT sign convention is such that
-    # the resulting CTF phase *decreases* with frequency, so the IFFT peak
-    # lands in the *upper* half of the result (alias of a positive delay).
-    # The peak search below handles both halves.
-    ctf = local_pct * remote_pct
-
-    # Mask out tones the device flagged as invalid / unmeasured. Without this,
-    # CS channels excluded from the channel map (e.g. the BLE primary
-    # advertising channels) appear as hard zeros and distort the IFFT peak.
-    if tone_mask is not None:
-        ctf = ctf * tone_mask.astype(ctf.dtype)
-
-    # Check for all-zero data
-    if np.all(np.abs(ctf) < 1e-12):
+    result = _compute_cir_raw(
+        i_local, q_local, i_remote, q_remote, oversample, tone_mask,
+    )
+    if result is None:
         return None
-
-    # Zero-pad for oversampling
-    n_fft = NUM_TONES * oversample
-    ctf_padded = np.zeros(n_fft, dtype=complex)
-    ctf_padded[:NUM_TONES] = ctf
-
-    # IFFT -> Channel Impulse Response
-    cir = np.fft.ifft(ctf_padded)
-    cir_mag = np.abs(cir)
+    cir_mag, n_fft = result
 
     # Peak selection. Because the CTF phase has the opposite sign on real
     # hardware, the peak corresponding to a positive distance can lie in

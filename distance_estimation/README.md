@@ -90,6 +90,16 @@ Weights - RTT: 0.10  IFFT: 0.50  Slope: 0.40
 [Session 1, AP 0 BAD]  RTT:  1.15m  IFFT:  1.10m  Slope:  1.18m  Combined:  1.13m  (avg:  1.19m)
 ```
 
+## GUI
+
+[cs_gui.py](cs_gui.py) is a Tkinter front-end that wraps the same parser and DSP as the CLI. It shows a live time series of RTT / IFFT / Slope / Combined / Averaged distances next to the IFFT CIR magnitude with the selected peak marked, plus a large readout of the current averaged distance.
+
+```bash
+.venv/bin/python cs_gui.py
+```
+
+Pick a port (the list is filtered to `*usbmodem*`) and baud, then click **Start** — the GUI sends `AT+IQ on` automatically and `AT+IQ off` on stop. Combined weights, averaging window, IFFT mode (highest / earliest with threshold slider) and antenna-path combination can be changed live without restarting the session. When antenna paths are set to *None*, each AP gets its own row of charts; *Average* collapses them into a single combined row.
+
 ## Algorithm Overview
 
 Three independent distance estimation methods are computed and combined:

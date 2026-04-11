@@ -203,6 +203,10 @@ Distance estimation from cs_distance.py Python script with four antenna paths.
 
 ![Distance estimation from Python script](images/cs_distance_script.png)
 
+TK GUI front-end cs_gui.py for visualizing distance estimation.
+
+![GUI front-end](images/cs_gui.png)
+
 ## Connection Interval Tuning
 
 The `conn_int` setting controls the BLE connection interval used for ranging sessions. It directly affects setup speed, ranging throughput, and how many concurrent sessions the radio can sustain.
