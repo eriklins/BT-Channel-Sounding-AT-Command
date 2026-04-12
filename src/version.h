@@ -1,7 +1,7 @@
 #ifndef VERSION_H_
 #define VERSION_H_
 
-#define APP_VERSION "0.8"
+#define APP_VERSION "0.9"
 #define APP_BUILD_NAME "cs_at_command"
 
 #endif /* VERSION_H_ */

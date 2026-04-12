@@ -14,6 +14,116 @@
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
+/* --- Autoconnect --- */
+
+static struct k_work_delayable autoconnect_scan_work;
+static struct k_work autoconnect_connect_work;
+static bool autoconnect_user_stopped;
+
+static void autoconnect_connect_work_fn(struct k_work *work)
+{
+	const struct autoconnect_cfg *cfg = app_settings_get_autoconnect();
+
+	if (!cfg->enabled || autoconnect_user_stopped) {
+		return;
+	}
+
+	if (bt_mgr_is_scanning()) {
+		bt_mgr_scan_stop();
+	}
+
+	bt_addr_le_t addr;
+	int err = bt_mgr_scan_lookup(cfg->mac, &addr);
+
+	if (err) {
+		LOG_WRN("Autoconnect: lookup failed, retrying");
+		k_work_schedule(&autoconnect_scan_work, K_SECONDS(2));
+		return;
+	}
+
+	uint8_t session_id;
+
+	err = session_mgr_start(&addr, cfg->interval_ms, &session_id);
+	if (err) {
+		LOG_WRN("Autoconnect: session start failed (err %d), retrying",
+			err);
+		k_work_schedule(&autoconnect_scan_work, K_SECONDS(5));
+		return;
+	}
+
+	char resp[16];
+
+	snprintk(resp, sizeof(resp), "+RANGE:%u", session_id);
+	at_cmd_respond(resp);
+}
+
+static void autoconnect_scan_found_cb(const char *mac_hex)
+{
+	const struct autoconnect_cfg *cfg = app_settings_get_autoconnect();
+
+	if (!cfg->enabled || autoconnect_user_stopped) {
+		return;
+	}
+
+	if (strcasecmp(mac_hex, cfg->mac) != 0) {
+		return;
+	}
+
+	/* Defer connect to system workqueue — not safe from BT callback */
+	k_work_submit(&autoconnect_connect_work);
+}
+
+static void autoconnect_scan_work_fn(struct k_work *work)
+{
+	const struct autoconnect_cfg *cfg = app_settings_get_autoconnect();
+
+	if (!cfg->enabled || autoconnect_user_stopped) {
+		return;
+	}
+
+	if (bt_mgr_get_role() != BT_MGR_ROLE_INITIATOR) {
+		return;
+	}
+
+	if (session_mgr_has_active()) {
+		return;
+	}
+
+	int err = bt_mgr_scan_start(0);
+
+	if (err == -EALREADY) {
+		/* Scan already running — callback will fire when target appears */
+		return;
+	}
+
+	if (err) {
+		LOG_WRN("Autoconnect: scan start failed (err %d), retrying",
+			err);
+		k_work_schedule(&autoconnect_scan_work, K_SECONDS(5));
+	}
+}
+
+static void autoconnect_disconnect_cb(uint8_t session_id)
+{
+	if (autoconnect_user_stopped) {
+		return;
+	}
+
+	k_work_schedule(&autoconnect_scan_work, K_SECONDS(2));
+}
+
+static void autoconnect_trigger(void)
+{
+	const struct autoconnect_cfg *cfg = app_settings_get_autoconnect();
+
+	if (!cfg->enabled) {
+		return;
+	}
+
+	autoconnect_user_stopped = false;
+	k_work_schedule(&autoconnect_scan_work, K_MSEC(500));
+}
+
 static void at_test_handler(const char *args)
 {
 	at_cmd_respond("OK");
@@ -265,6 +375,66 @@ static void ats_handler(const char *args)
 		return;
 	}
 
+	/* ATS autoconnect=? or ATS autoconnect=<mac>,<int_ms> or ATS autoconnect=n */
+	if (strncasecmp(args, "autoconnect", 11) == 0) {
+		const char *val = args + 11;
+
+		if (*val != '=') {
+			at_cmd_respond("ERROR");
+			return;
+		}
+		val++;
+
+		if (*val == '?') {
+			const struct autoconnect_cfg *cfg =
+				app_settings_get_autoconnect();
+
+			if (cfg->enabled) {
+				char resp[32];
+
+				snprintk(resp, sizeof(resp), "%s,%u",
+					 cfg->mac, cfg->interval_ms);
+				at_cmd_respond(resp);
+			} else {
+				at_cmd_respond("n");
+			}
+			at_cmd_respond("OK");
+			return;
+		}
+
+		if (strcasecmp(val, "n") == 0) {
+			int err = app_settings_set_autoconnect_off();
+
+			at_cmd_respond(err ? "ERROR" : "OK");
+			return;
+		}
+
+		/* Parse <mac>,<int_ms> */
+		const char *comma = strchr(val, ',');
+
+		if (!comma || (comma - val) != 12) {
+			at_cmd_respond("ERROR");
+			return;
+		}
+
+		char mac_buf[13];
+
+		memcpy(mac_buf, val, 12);
+		mac_buf[12] = '\0';
+
+		uint16_t interval_ms = (uint16_t)atoi(comma + 1);
+
+		if (interval_ms == 0) {
+			at_cmd_respond("ERROR");
+			return;
+		}
+
+		int err = app_settings_set_autoconnect(mac_buf, interval_ms);
+
+		at_cmd_respond(err ? "ERROR" : "OK");
+		return;
+	}
+
 	at_cmd_respond("ERROR");
 }
 
@@ -388,6 +558,10 @@ static void at_rangex_handler(const char *args)
 
 	int err = session_mgr_stop(id);
 
+	if (!err) {
+		autoconnect_user_stopped = true;
+	}
+
 	at_cmd_respond(err ? "ERROR" : "OK");
 }
 
@@ -412,12 +586,17 @@ int main(void)
 	at_cmd_register("ATZ", atz_handler);
 	at_cmd_register("AT", at_test_handler);
 
+	k_work_init_delayable(&autoconnect_scan_work, autoconnect_scan_work_fn);
+	k_work_init(&autoconnect_connect_work, autoconnect_connect_work_fn);
+
 	int err = bt_mgr_init();
 
 	if (err) {
 		LOG_ERR("BT init failed (err %d)", err);
 		return -1;
 	}
+
+	bt_mgr_set_scan_found_cb(autoconnect_scan_found_cb);
 
 	err = app_settings_init();
 	if (err) {
@@ -432,8 +611,11 @@ int main(void)
 	}
 
 	session_mgr_init();
+	session_mgr_set_disconnect_cb(autoconnect_disconnect_cb);
 
 	at_cmd_respond("OK");
+
+	autoconnect_trigger();
 
 	return 0;
 }

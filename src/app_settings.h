@@ -57,4 +57,20 @@ uint32_t app_settings_get_baudrate(void);
  */
 int app_settings_set_baudrate(uint32_t baud);
 
+/** Autoconnect configuration. */
+struct autoconnect_cfg {
+	char mac[13];         /* 12-char hex MAC + NUL */
+	uint16_t interval_ms;
+	bool enabled;
+};
+
+/** Get autoconnect config. */
+const struct autoconnect_cfg *app_settings_get_autoconnect(void);
+
+/** Set and persist autoconnect (mac = 12-char hex, interval_ms > 0). */
+int app_settings_set_autoconnect(const char *mac, uint16_t interval_ms);
+
+/** Disable and persist autoconnect. */
+int app_settings_set_autoconnect_off(void);
+
 #endif /* APP_SETTINGS_H_ */

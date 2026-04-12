@@ -15,6 +15,7 @@ LOG_MODULE_REGISTER(app_settings, LOG_LEVEL_INF);
 #define SETTINGS_KEY_ADV_AUTO  "cs_at/advauto"
 #define SETTINGS_KEY_CONN_INT  "cs_at/connint"
 #define SETTINGS_KEY_BAUDRATE  "cs_at/baud"
+#define SETTINGS_KEY_AUTOCONN  "cs_at/autocon"
 #define NAME_MAX_LEN           CONFIG_BT_DEVICE_NAME_MAX
 #define ROLE_MAX_LEN           16
 #define CONN_INT_DEFAULT_MS    100
@@ -36,6 +37,9 @@ static bool conn_interval_loaded;
 
 static uint32_t baudrate = BAUDRATE_DEFAULT;
 static bool baudrate_loaded;
+
+static struct autoconnect_cfg autoconn_cfg;
+static bool autoconn_loaded;
 
 static int settings_set_cb(const char *name, size_t len,
 			   settings_read_cb read_cb, void *cb_arg)
@@ -95,6 +99,24 @@ static int settings_set_cb(const char *name, size_t len,
 				baudrate = val;
 				baudrate_loaded = true;
 				LOG_INF("Loaded baudrate: %u", val);
+			}
+		}
+		return 0;
+	}
+
+	if (!strcmp(name, "autocon")) {
+		struct autoconnect_cfg val;
+
+		if (len == sizeof(val)) {
+			int rc = read_cb(cb_arg, &val, sizeof(val));
+
+			if (rc == sizeof(val)) {
+				memcpy(&autoconn_cfg, &val, sizeof(val));
+				autoconn_cfg.mac[12] = '\0';
+				autoconn_loaded = true;
+				LOG_INF("Loaded autoconnect: %s, %s,%u",
+					val.enabled ? "on" : "off",
+					val.mac, val.interval_ms);
 			}
 		}
 		return 0;
@@ -350,5 +372,78 @@ int app_settings_set_baudrate(uint32_t baud)
 	}
 
 	LOG_INF("baudrate set to %u", baud);
+	return 0;
+}
+
+const struct autoconnect_cfg *app_settings_get_autoconnect(void)
+{
+	return &autoconn_cfg;
+}
+
+static bool is_hex_string(const char *s, size_t len)
+{
+	for (size_t i = 0; i < len; i++) {
+		char c = s[i];
+
+		if (!((c >= '0' && c <= '9') ||
+		      (c >= 'A' && c <= 'F') ||
+		      (c >= 'a' && c <= 'f'))) {
+			return false;
+		}
+	}
+	return true;
+}
+
+int app_settings_set_autoconnect(const char *mac, uint16_t interval_ms)
+{
+	if (strlen(mac) != 12 || !is_hex_string(mac, 12)) {
+		return -EINVAL;
+	}
+
+	if (interval_ms == 0) {
+		return -EINVAL;
+	}
+
+	/* Store MAC as uppercase for consistent display/comparison */
+	for (int i = 0; i < 12; i++) {
+		char c = mac[i];
+
+		if (c >= 'a' && c <= 'f') {
+			c -= 32;
+		}
+		autoconn_cfg.mac[i] = c;
+	}
+	autoconn_cfg.mac[12] = '\0';
+	autoconn_cfg.interval_ms = interval_ms;
+	autoconn_cfg.enabled = true;
+
+	int err = settings_save_one(SETTINGS_KEY_AUTOCONN,
+				    &autoconn_cfg, sizeof(autoconn_cfg));
+
+	if (err) {
+		LOG_ERR("settings_save_one failed (err %d)", err);
+		return err;
+	}
+
+	LOG_INF("autoconnect set to %s,%u", autoconn_cfg.mac,
+		autoconn_cfg.interval_ms);
+	return 0;
+}
+
+int app_settings_set_autoconnect_off(void)
+{
+	autoconn_cfg.enabled = false;
+	memset(autoconn_cfg.mac, 0, sizeof(autoconn_cfg.mac));
+	autoconn_cfg.interval_ms = 0;
+
+	int err = settings_save_one(SETTINGS_KEY_AUTOCONN,
+				    &autoconn_cfg, sizeof(autoconn_cfg));
+
+	if (err) {
+		LOG_ERR("settings_save_one failed (err %d)", err);
+		return err;
+	}
+
+	LOG_INF("autoconnect disabled");
 	return 0;
 }

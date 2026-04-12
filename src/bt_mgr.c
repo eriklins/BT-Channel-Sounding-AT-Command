@@ -37,6 +37,7 @@ static bt_addr_le_t scan_seen[SCAN_MAX_DEVICES];
 static int scan_seen_count;
 
 static struct k_work_delayable scan_timeout_work;
+static bt_mgr_scan_found_cb_t scan_found_cb;
 
 static struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
@@ -460,6 +461,15 @@ static void scan_filter_match(struct bt_scan_device_info *device_info,
 			 device_info->recv_info->rssi);
 	}
 	at_cmd_respond(resp);
+
+	if (scan_found_cb) {
+		char mac_hex[13];
+
+		snprintk(mac_hex, sizeof(mac_hex),
+			 "%02X%02X%02X%02X%02X%02X",
+			 a[5], a[4], a[3], a[2], a[1], a[0]);
+		scan_found_cb(mac_hex);
+	}
 }
 
 BT_SCAN_CB_INIT(scan_cb, scan_filter_match, NULL, NULL, NULL);
@@ -608,4 +618,9 @@ int bt_mgr_scan_lookup(const char *mac_hex, bt_addr_le_t *addr)
 	addr->type = BT_ADDR_LE_RANDOM;
 	bt_addr_copy(&addr->a, &parsed);
 	return 0;
+}
+
+void bt_mgr_set_scan_found_cb(bt_mgr_scan_found_cb_t cb)
+{
+	scan_found_cb = cb;
 }

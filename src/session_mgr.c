@@ -75,6 +75,7 @@ struct ranging_session {
 };
 
 static struct ranging_session sessions[SESSION_MGR_MAX_SESSIONS];
+static session_mgr_disconnect_cb_t session_disconnect_cb;
 
 /* Setup thread — processes one session setup at a time */
 #define SETUP_THREAD_STACK_SIZE 4096
@@ -164,6 +165,10 @@ static void disconnected_cb(struct bt_conn *conn, uint8_t reason)
 
 	if (was_active) {
 		session_send_status(s, "DISCONNECTED");
+
+		if (session_disconnect_cb) {
+			session_disconnect_cb(s->id);
+		}
 	}
 
 	/* Release setup semaphores in case setup was in progress */
@@ -1103,4 +1108,9 @@ void session_mgr_diag(void)
 			 k_sem_count_get(&s->sem_local_steps));
 		at_cmd_respond(resp);
 	}
+}
+
+void session_mgr_set_disconnect_cb(session_mgr_disconnect_cb_t cb)
+{
+	session_disconnect_cb = cb;
 }

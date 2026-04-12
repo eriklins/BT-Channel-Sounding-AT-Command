@@ -45,4 +45,10 @@ bool session_mgr_owns_conn(struct bt_conn *conn);
  */
 void session_mgr_diag(void);
 
+/** Callback type invoked when a ranging session disconnects. */
+typedef void (*session_mgr_disconnect_cb_t)(uint8_t session_id);
+
+/** Register a callback invoked on session disconnect. */
+void session_mgr_set_disconnect_cb(session_mgr_disconnect_cb_t cb);
+
 #endif /* SESSION_MGR_H_ */

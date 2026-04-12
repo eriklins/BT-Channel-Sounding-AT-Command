@@ -70,4 +70,10 @@ bool bt_mgr_is_scanning(void);
  */
 int bt_mgr_scan_lookup(const char *mac_hex, bt_addr_le_t *addr);
 
+/** Callback type invoked for each new scan result. mac_hex is 12-char uppercase. */
+typedef void (*bt_mgr_scan_found_cb_t)(const char *mac_hex);
+
+/** Register a callback invoked for each new scan result. */
+void bt_mgr_set_scan_found_cb(bt_mgr_scan_found_cb_t cb);
+
 #endif /* BT_MGR_H_ */
