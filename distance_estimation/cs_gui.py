@@ -75,6 +75,8 @@ METRIC_LABELS_DARK = [
 ]
 
 # Chart theme palettes selected based on the detected Tk theme.
+MAX_CIR_APS = 4  # max antenna paths for BT channel sounding
+
 LIGHT_THEME = {
     "fig_bg":     "#ffffff",
     "axes_bg":    "#ffffff",
@@ -84,6 +86,8 @@ LIGHT_THEME = {
     "peak":       "red",
     "thr":        "tab:gray",
     "metrics":    METRIC_LABELS_LIGHT,
+    "cir_ap":     ["tab:purple", "tab:blue", "tab:green", "tab:orange"],
+    "peak_ap":    ["red", "blue", "green", "orange"],
 }
 DARK_THEME = {
     "fig_bg":     "#2b2b2b",
@@ -94,6 +98,8 @@ DARK_THEME = {
     "peak":       "#ff6b6b",
     "thr":        "#a0a0a0",
     "metrics":    METRIC_LABELS_DARK,
+    "cir_ap":     ["#c48bff", "#6cb4ff", "#7fd17f", "#ffb454"],
+    "peak_ap":    ["#ff6b6b", "#6bb5ff", "#6bff8b", "#ffc554"],
 }
 
 
@@ -228,6 +234,8 @@ class CSApp:
         # DSP state
         self.tracker = DistanceTracker(window_size=5)
         self._avg_session_buf: dict[int, DistanceEstimate] = {}
+        self._combined_cir: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        self._combined_peaks: dict[int, float | None] = {}
         self.known_aps: list[int] = [0]
         self._ts_start: float | None = None
         self.var_ts_window_s = tk.IntVar(value=int(TIME_SERIES_WINDOW_S))
@@ -566,6 +574,8 @@ class CSApp:
 
     def _clear_data(self):
         self._avg_session_buf.clear()
+        self._combined_cir.clear()
+        self._combined_peaks.clear()
         self.tracker = DistanceTracker(window_size=self.var_avg_window.get())
         self.ts_buffers.clear()
         self.cir_data.clear()
@@ -700,10 +710,10 @@ class CSApp:
                 self._record_sample(self.AP_ALL, combined_est, None)
                 self._avg_session_buf.clear()
             self._avg_session_buf[report.ap] = est
-            # Always show the latest report's CIR with its own peak.
+            # Store each antenna path's CIR for overlay display.
             if cir is not None:
-                self.cir_data[self.AP_ALL] = cir
-                self.peak_distance[self.AP_ALL] = est.ifft_m
+                self._combined_cir[report.ap] = cir
+                self._combined_peaks[report.ap] = est.ifft_m
             return
 
         # ant_comb == "none": one row per antenna path
@@ -821,13 +831,15 @@ class CSApp:
         self.line_peak.clear()
         self.line_thr.clear()
         self.line_nfl.clear()
+        self._comb_cir_lines: dict[int, object] = {}
+        self._comb_peak_lines: dict[int, object] = {}
 
         aps = self.known_aps if self.known_aps else [0]
         n = len(aps)
         for row, ap in enumerate(aps):
             ax_ts = self.fig.add_subplot(n, 2, row * 2 + 1)
             ax_cir = self.fig.add_subplot(n, 2, row * 2 + 2)
-            label = "combined" if ap == self.AP_ALL else f"AP {ap}"
+            label = "averaged" if ap == self.AP_ALL else f"AP {ap}"
 
             ax_ts.set_title(f"Distance estimates ({label})")
             ax_ts.set_xlabel("time (s)")
@@ -843,33 +855,67 @@ class CSApp:
             self.axes_ts[ap] = ax_ts
             self.lines_ts[ap] = line_dict
 
-            ax_cir.set_title(f"IFFT CIR ({label})")
+            if ap == self.AP_ALL:
+                ax_cir.set_title("IFFT CIR (all APs)")
+            else:
+                ax_cir.set_title(f"IFFT CIR (AP {ap})")
             ax_cir.set_xlabel("Distance (m)")
             ax_cir.set_ylabel("|CIR|")
             ax_cir.set_xlim(0, MAX_PLOT_DISTANCE_M)
             ax_cir.grid(True, alpha=0.3)
-            (cl,) = ax_cir.plot(
-                [], [], color=self.theme["cir"], linewidth=1.4, label="CIR",
-            )
-            (pk,) = ax_cir.plot(
-                [], [], color=self.theme["peak"], linewidth=1.0,
-                linestyle="--", label="selected peak",
-            )
-            (thr,) = ax_cir.plot(
-                [], [], color=self.theme["thr"], linewidth=1.0,
-                linestyle="--", label="threshold",
-            )
-            (nfl,) = ax_cir.plot(
-                [], [], color=self.theme["thr"], linewidth=1.0,
-                linestyle=":", label="noise floor",
-            )
+
+            if ap == self.AP_ALL:
+                # Pre-allocate one CIR + peak line per antenna path.
+                cir_colors = self.theme["cir_ap"]
+                peak_colors = self.theme["peak_ap"]
+                for i in range(MAX_CIR_APS):
+                    (cl,) = ax_cir.plot(
+                        [], [], color=cir_colors[i], linewidth=1.4,
+                        label=f"AP {i}",
+                    )
+                    (pk,) = ax_cir.plot(
+                        [], [], color=peak_colors[i], linewidth=1.0,
+                        linestyle="--",
+                    )
+                    self._comb_cir_lines[i] = cl
+                    self._comb_peak_lines[i] = pk
+                # Single threshold / noise-floor (from latest AP data).
+                (thr,) = ax_cir.plot(
+                    [], [], color=self.theme["thr"], linewidth=1.0,
+                    linestyle="--", label="threshold",
+                )
+                (nfl,) = ax_cir.plot(
+                    [], [], color=self.theme["thr"], linewidth=1.0,
+                    linestyle=":", label="noise floor",
+                )
+                # Store dummy CIR/peak entries so the per-AP redraw path
+                # skips AP_ALL — the combined path handles it.
+                self.line_cir[ap] = None
+                self.line_peak[ap] = None
+            else:
+                (cl,) = ax_cir.plot(
+                    [], [], color=self.theme["cir"], linewidth=1.4, label="CIR",
+                )
+                (pk,) = ax_cir.plot(
+                    [], [], color=self.theme["peak"], linewidth=1.0,
+                    linestyle="--", label="selected peak",
+                )
+                (thr,) = ax_cir.plot(
+                    [], [], color=self.theme["thr"], linewidth=1.0,
+                    linestyle="--", label="threshold",
+                )
+                (nfl,) = ax_cir.plot(
+                    [], [], color=self.theme["thr"], linewidth=1.0,
+                    linestyle=":", label="noise floor",
+                )
+                self.line_cir[ap] = cl
+                self.line_peak[ap] = pk
+
+            self.line_thr[ap] = thr
+            self.line_nfl[ap] = nfl
             ax_cir.legend(loc="upper right", fontsize=8)
             self._style_axes(ax_cir)
             self.axes_cir[ap] = ax_cir
-            self.line_cir[ap] = cl
-            self.line_peak[ap] = pk
-            self.line_thr[ap] = thr
-            self.line_nfl[ap] = nfl
 
         self.fig.tight_layout()
         self.canvas.draw_idle()
@@ -911,8 +957,64 @@ class CSApp:
                     min(MAX_PLOT_DISTANCE_M, ymax + margin),
                 )
 
+        # --- combined CIR: overlay all antenna paths ---
+        if self.AP_ALL in self.axes_cir and self._combined_cir:
+            ax = self.axes_cir[self.AP_ALL]
+            global_max = 0.0
+            for i in range(MAX_CIR_APS):
+                cir = self._combined_cir.get(i)
+                if cir is not None:
+                    distances, mag = cir
+                    self._comb_cir_lines[i].set_data(distances, mag)
+                    valid = distances <= MAX_PLOT_DISTANCE_M
+                    mvalid = mag[valid]
+                    if mvalid.size:
+                        global_max = max(global_max, float(mvalid.max()))
+                    peak = self._combined_peaks.get(i)
+                    if peak is not None and 0 <= peak <= MAX_PLOT_DISTANCE_M:
+                        top = float(mvalid.max()) if mvalid.size else 1.0
+                        self._comb_peak_lines[i].set_data(
+                            [peak, peak], [0, top],
+                        )
+                    else:
+                        self._comb_peak_lines[i].set_data([], [])
+                else:
+                    self._comb_cir_lines[i].set_data([], [])
+                    self._comb_peak_lines[i].set_data([], [])
+            if global_max > 0:
+                ax.set_ylim(0, global_max * 1.1 + 1e-9)
+            # Threshold / noise-floor from the latest available AP CIR.
+            last_cir = None
+            for i in reversed(range(MAX_CIR_APS)):
+                if i in self._combined_cir:
+                    last_cir = self._combined_cir[i]
+                    break
+            if (last_cir is not None
+                    and self.var_ifft_mode.get() == "earliest"
+                    and last_cir[1].size):
+                mag = last_cir[1]
+                if self.var_thr_mode.get() == "nfl":
+                    nfl_level = estimate_noise_floor(mag)
+                    thr_db = float(self.var_ifft_thr_nfl.get())
+                    thr_level = nfl_level * 10.0 ** (thr_db / 20.0)
+                    self.line_nfl[self.AP_ALL].set_data(
+                        [0, MAX_PLOT_DISTANCE_M], [nfl_level, nfl_level],
+                    )
+                else:
+                    thr_level = float(self.var_ifft_thr_rel.get()) * float(mag.max())
+                    self.line_nfl[self.AP_ALL].set_data([], [])
+                self.line_thr[self.AP_ALL].set_data(
+                    [0, MAX_PLOT_DISTANCE_M], [thr_level, thr_level],
+                )
+            else:
+                self.line_thr[self.AP_ALL].set_data([], [])
+                self.line_nfl[self.AP_ALL].set_data([], [])
+
+        # --- per-AP CIR (non-combined mode) ---
         for ap, cir in self.cir_data.items():
-            if ap not in self.line_cir or cir is None:
+            if ap == self.AP_ALL or ap not in self.line_cir:
+                continue
+            if self.line_cir[ap] is None or cir is None:
                 continue
             distances, mag = cir
             self.line_cir[ap].set_data(distances, mag)
