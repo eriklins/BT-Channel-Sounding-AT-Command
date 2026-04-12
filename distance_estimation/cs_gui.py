@@ -927,7 +927,7 @@ class CSApp:
         self._last_redraw = now
 
         if self.last_avg_value is not None:
-            self.lbl_avg.configure(text=f"Averaged: {self.last_avg_value:.2f} m")
+            self.lbl_avg.configure(text=f"Averaged Distance: {self.last_avg_value:.2f} m")
 
         for ap, buffers in self.ts_buffers.items():
             if ap not in self.axes_ts:
